@@ -38,12 +38,6 @@ def find_nearest(array, value):
     idx = (np.abs(array - value)).argmin()
     return array[idx]
 
-dynfmt = "%Y%m%d%H%M%S"
-year="%Y"
-month="%m"
-day="%d"
-seconds="%S"
-
 ######################################## Load data and define numpy arrays ######################################## 
 Year = "2020"
 Month = "04"
@@ -52,6 +46,11 @@ Hour = "00" # only 00 and 12
 Minute="00" # only 00 and 30
 Seconds='00'
 
+dynfmt = "%Y%m%d%H%M%S"
+year="%Y"
+month="%m"
+day="%d"
+seconds="%S"
 
 ##### Surface Measurement #####
 #data_surf = pd.read_csv('/data/COALITION2/PicturesSatellite/results_NAL/surf_stat_20190427000000.txt')
