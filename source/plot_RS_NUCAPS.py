@@ -4,30 +4,22 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import pandas as pd
 import numpy as np
+import math 
+import os
 
 from satpy import Scene, find_files_and_readers
-import numpy as np
 from datetime import datetime
+import datetime as dt
+
 from metpy import calc as cc
-import pandas as pd
 import metpy.calc as mpcalc
 from metpy.units import units
 from metpy.interpolate import interpolate_to_grid
 import matplotlib.pyplot as plt
-
-import metpy.calc as mpcalc
 from metpy.cbook import get_test_data
 from metpy.plots import Hodograph, SkewT
-from metpy.units import units
-import datetime as dt
-
-from datetime import datetime
-import math 
-
-import os
 
 from scipy import spatial
-import numpy as np
 import geopy.distance
 import scipy.ndimage as ndimage
 import xarray as xr
