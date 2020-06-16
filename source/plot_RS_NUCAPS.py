@@ -32,24 +32,70 @@ import matplotlib.pyplot as plt
 from metpy.cbook import get_test_data
 from metpy.plots import Hodograph, SkewT
 from metpy.interpolate import interpolate_1d
+import sys
 
 def find_nearest(array, value):
     array = np.asarray(array)
     idx = (np.abs(array - value)).argmin()
     return array[idx]
 
-######################################## Load data and define numpy arrays ######################################## 
-Year = "2020"
-Month = "04"
-Day = "27"
-Hour = "00" # only 00 and 12
-Minute="00" # only 00 and 30
-Seconds='00'
+def convert_H2O_MR_to_Td(H2O_MR, p):
+    # input water vapour mass mixing ration in (mWV / mDA) kg/kg
 
-dynfmt = "%Y%m%d%H%M%S"
+    WVMR = H2O_MR * 1000 # convert to grams
+    WVMR = WVMR * units('g/kg')
+    e_1 = mpcalc.vapor_pressure(p_NUCAPS_orig, WVMR)
+    T_d = mpcalc.dewpoint(e_1) 
+    return T_d
+
+def extract_temperature_profile(T, index_CP, index_min_pressure, var_name='Temperature'):
+
+    df_Temp = pd.DataFrame(T)
+    df_Temp = df_Temp.loc[[index_CP],:].T
+    df_Temp.columns = [var_name]      
+    df_Temp = df_Temp[0:int(index_min_pressure)]
+    T_profile = (df_Temp[var_name].values * units.kelvin).to(units.degC)
+
+    return T_profile
+
+def extract_dewpoit_temperature_profile(T_d, index_CP, index_min_pressure, var_name='Temperature_D'):
+
+    df_Temp_D = pd.DataFrame(T_d)
+    df_Temp_D = df_Temp_D.loc[[index_CP],:].T
+    df_Temp_D.columns = [var_name]
+    df_Temp_D = df_Temp_D[0:int(index_min_pressure)]
+    T_d_profile = (df_Temp_D[var_name].values)
+
+    return T_d_profile
+
+
+######################################## Load data and define numpy arrays ######################################## 
+
+SURF_archive = '/data/COALITION2/PicturesSatellite/results_NAL/'
+RS_archive   = '/data/COALITION2/PicturesSatellite/results_NAL/Radiosondes/Payerne/'
+NUCAPS_list_dir = '/data/COALITION2/PicturesSatellite/results_NAL/NUCAPS/'
+LIDAR_archive = '/data/COALITION2/PicturesSatellite/results_NAL/RALMO/Payerne/'
+OUTPUT_dir    = '/data/COALITION2/PicturesSatellite/results_NAL/Plots/'
+
+######################################## Load data and define numpy arrays ######################################## 
+if len(sys.argv) == 1:
+    #use default date
+    RS_time=dt.datetime(2020,4,27,0,0,0)
+elif len(sys.argv) == 6:
+    year   = int(sys.argv[1])
+    month  = int(sys.argv[2])
+    day    = int(sys.argv[3])
+    hour   = int(sys.argv[4])
+    minute = int(sys.argv[5])
+    second = 0
+    RS_time = dt.datetime(year,month,day,hour,minute,0)
+else:
+    print("*** ERROR, unknown number of command line arguemnts")
+    quit()
+
 
 ##### Surface Measurement ##### -> to be downloaded
-data_surf = pd.read_csv('/data/COALITION2/PicturesSatellite/results_NAL/surf_stat_20200427000000.txt')
+data_surf = pd.read_csv(RS_time.strftime(SURF_archive+'/surf_stat_%Y%m%d%H%M00.txt'))
 lowest_pres_SMN = data_surf['90'][0]
 
 pressure_hPa = data_surf['90'].values * units.hPa
@@ -59,10 +105,10 @@ dewpoint_degC = cc.dewpoint_from_relative_humidity(temperature_degC, relative_hu
 
 ###### Radiosondes ######
 ### read Radiosonde file and save as dataframe ###
-RS_data = xr.open_dataset('/data/COALITION2/PicturesSatellite/results_NAL/Radiosondes/Payerne/RS_concat.nc').to_dataframe()
+RS_data = xr.open_dataset(RS_archive+'/RS_concat.nc').to_dataframe()
 
 ### choose desired time ###
-RS_data = RS_data[RS_data.time_YMDHMS == int(Year+Month+Day+Hour+Minute+Seconds)]
+RS_data = RS_data[RS_data.time_YMDHMS == int(RS_time.strftime('%Y%m%d%H%M%S'))]
 RS_data = RS_data[RS_data.pressure_hPa != 1000] # delete first row (undefined values)
 RS_data = RS_data.reset_index(drop=True)
 
@@ -123,29 +169,25 @@ T_d_RS_smoothed = pd.DataFrame(T_d_RS_list)
 
 ##############################  NUCAPS ##############################
 ### read file ###
-file_index = 1 # define file
-date_NUCAPS = Year + Month + Day
-date_NUCAPS = date_NUCAPS +'.txt'
-filtered_files = pd.read_csv(os.path.join('/data/COALITION2/PicturesSatellite/results_NAL/NUCAPS', date_NUCAPS))
+filtered_files = pd.read_csv(os.path.join(NUCAPS_list_dir, RS_time.strftime('%Y%m%d.txt')))
 
-index_CP = filtered_files.iloc[file_index,3]
-min_dist = filtered_files.iloc[file_index,2]
-filenames = [filtered_files.iloc[file_index,1]]
-global_scene = Scene(reader="nucaps", filenames=filenames)    
-NUCAPS_time = filenames = filtered_files.iloc[file_index,1]
-NUCAPS_time = NUCAPS_time[65:80]
-NUCAPS_time = dt.datetime.strptime(NUCAPS_time,"%Y%m%d%H%M%S%f")
-time_dif = np.abs(dt.datetime.strptime(Year+Month+Day+Hour+Minute+Seconds,dynfmt) - NUCAPS_time)
+min_dist   = min(filtered_files.min_dist)
+#min_dist   = 25
+i_min_dist = np.argmin(filtered_files.min_dist)
+#i_min_dist = np.where(filtered_files.min_dist == min_dist)[0][0]
+NUCAPS_file = filtered_files.file[i_min_dist]
+index_CP   = filtered_files['index'][i_min_dist]
 
-# read variables
-var_pres="H2O_MR"
-global_scene.load([var_pres], pressure_levels=True)
+global_scene = Scene(reader="nucaps", filenames=[NUCAPS_file])
+NUCAPS_time = dt.datetime.strptime(NUCAPS_file[65:80],"%Y%m%d%H%M%S%f")
+time_dif = np.abs(RS_time - NUCAPS_time)
 
-var_temp = "Temperature"
-global_scene.load([var_temp], pressure_levels=True)
+
+# read moisture variables H2O_MR
+global_scene.load(["H2O_MR"], pressure_levels=True)
 
 # Pressure 
-p = global_scene[var_pres].coords['Pressure'].values
+p = global_scene["H2O_MR"].coords['Pressure'].values
 df_pres = pd.DataFrame(p)
 df_pres = df_pres.loc[[index_CP],:].T
 df_pres.columns = ['Pressure']
@@ -155,106 +197,36 @@ df_pres = df_pres[0:int(index_min_pressure)]
 p_NUCAPS = (df_pres['Pressure'].values * units.hPa)
 p_NUCAPS_orig = (df_pres_orig['Pressure'].values * units.hPa)
 
-# Temperature variables
-## Temperature
-T = global_scene[var_temp].values
-df_Temp = pd.DataFrame(T)
-df_Temp = df_Temp.loc[[index_CP],:].T
-df_Temp.columns = ['Temperature']
-df_Temp = df_Temp[0:int(index_min_pressure)]
-T_NUCAPS_1 = df_Temp['Temperature'].values - 273.15
-T_NUCAPS = (df_Temp['Temperature'].values * units.kelvin).to(units.degC)
+# convert H2O MR to pressure 
+T_d = convert_H2O_MR_to_Td(global_scene["H2O_MR"].values, p_NUCAPS_orig)
+T_d_NUCAPS   = extract_dewpoit_temperature_profile(T_d,           index_CP, index_min_pressure, var_name='Temperature_D')
+#T_d_NUCAPS_1 = extract_dewpoit_temperature_profile(T_d.magnitude, index_CP, index_min_pressure, var_name='Temperature_D')
 
-## MIT Temperature
-var_temp_MIT = "MIT_Temperature"
-global_scene.load([var_temp_MIT], pressure_levels=True)
+### temperature
+# read NUCAPS temperature 
+global_scene.load(["Temperature"], pressure_levels=True)
+T_NUCAPS = extract_temperature_profile(global_scene["Temperature"].values, index_CP, index_min_pressure, var_name="Temperature")
 
-T = global_scene[var_temp_MIT].values
-df_Temp = pd.DataFrame(T)
-df_Temp = df_Temp.loc[[index_CP],:].T
-df_Temp.columns = ['MIT_Temperature']
-df_Temp = df_Temp[0:int(index_min_pressure)]
-MIT_T_NUCAPS_1 = df_Temp['MIT_Temperature'].values -273.15
-MIT_T_NUCAPS = (df_Temp['MIT_Temperature'].values * units.kelvin).to(units.degC)
+## read MIT Temperature
+global_scene.load(["MIT_Temperature"], pressure_levels=True)
+MIT_T_NUCAPS = extract_temperature_profile(global_scene["MIT_Temperature"].values, index_CP, index_min_pressure, var_name="MIT_Temperature")
 
-## FG Temperature
-var_temp_FG = "FG_Temperature"
-global_scene.load([var_temp_FG], pressure_levels=True)
+## read FG Temperature
+global_scene.load(["FG_Temperature"], pressure_levels=True)
+T_FG_NUCAPS = extract_temperature_profile(global_scene["FG_Temperature"].values, index_CP, index_min_pressure, var_name="FG_Temperature")
 
-T = global_scene[var_temp_FG].values
-df_Temp = pd.DataFrame(T)
-df_Temp = df_Temp.loc[[index_CP],:].T
-df_Temp.columns = ['FG_Temperature']
-df_Temp = df_Temp[0:int(index_min_pressure)]
-FG_T_NUCAPS_1 = df_Temp['FG_Temperature'].values -273.15
-FG_T_NUCAPS = (df_Temp['FG_Temperature'].values * units.kelvin).to(units.degC)
-
-# moisture variables
-## H2O MR
-var = "H2O_MR"
-global_scene.load([var], pressure_levels=True)
-
-WVMR = global_scene[var].values # mass mixing ratio (mWV / mDA) kg/kg
-WVMR = WVMR * 1000 # convert to grams
-WVMR = WVMR * units('g/kg')
-e_1 = mpcalc.vapor_pressure(p_NUCAPS_orig, WVMR)
-T_d = mpcalc.dewpoint(e_1) 
-
-df_Temp_D = pd.DataFrame(T_d)
-df_Temp_D = df_Temp_D.loc[[index_CP],:].T
-df_Temp_D.columns = ['Temperature_D']
-df_Temp_D = df_Temp_D[0:int(index_min_pressure)]
-T_d_NUCAPS = (df_Temp_D['Temperature_D'].values)
-
-df_Temp_D = pd.DataFrame(T_d.magnitude)
-df_Temp_D = df_Temp_D.loc[[index_CP],:].T
-df_Temp_D.columns = ['Temperature_D']
-df_Temp_D = df_Temp_D[0:int(index_min_pressure)]
-T_d_NUCAPS_1 = (df_Temp_D['Temperature_D'].values)
-
+### water vapour mass mixing ration and dewpoint temperature 
 ## MIT H2O MR
-var = "MIT_H2O_MR"
-global_scene.load([var], pressure_levels=True)
-
-WVMR = global_scene[var].values # mass mixing ratio (mWV / mDA) kg/kg
-WVMR = WVMR * 1000 # convert to grams
-WVMR = WVMR * units('g/kg')
-e_1 = mpcalc.vapor_pressure(p_NUCAPS_orig, WVMR)
-T_d = mpcalc.dewpoint(e_1)
-
-df_Temp_D = pd.DataFrame(T_d)
-df_Temp_D = df_Temp_D.loc[[index_CP],:].T
-df_Temp_D.columns = ['MIT_Temperature_D']
-df_Temp_D = df_Temp_D[0:int(index_min_pressure)]
-MIT_T_d_NUCAPS = (df_Temp_D['MIT_Temperature_D'].values)
-
-df_Temp_D = pd.DataFrame(T_d.magnitude)
-df_Temp_D = df_Temp_D.loc[[index_CP],:].T
-df_Temp_D.columns = ['MIT_Temperature_D']
-df_Temp_D = df_Temp_D[0:int(index_min_pressure)]
-MIT_T_d_NUCAPS_1 = (df_Temp_D['MIT_Temperature_D'].values)
+global_scene.load(["MIT_H2O_MR"], pressure_levels=True)
+T_d_MIT = convert_H2O_MR_to_Td(global_scene["MIT_H2O_MR"].values, p_NUCAPS_orig)
+T_d_MIT_NUCAPS = extract_dewpoit_temperature_profile(T_d_MIT, index_CP, index_min_pressure, var_name='MIT_Temperature_D')
 
 # FG H2O MR
-var_FG = "FG_H2O_MR"
-global_scene.load([var_FG], pressure_levels=True)
+global_scene.load(["FG_H2O_MR"], pressure_levels=True)
+T_d_FG = convert_H2O_MR_to_Td(global_scene["FG_H2O_MR"].values, p_NUCAPS_orig)
+T_d_FG_NUCAPS = extract_dewpoit_temperature_profile(T_d_FG, index_CP, index_min_pressure, var_name='FG_Temperature_D')
+#T_d_FG_NUCAPS_1 = extract_dewpoit_temperature_profile(T_d_FG.magnitude, index_CP, index_min_pressure, var_name='FG_Temperature_D')
 
-WVMR = global_scene[var_FG].values # mass mixing ratio (mWV / mDA) kg/kg
-WVMR = WVMR * 1000 # convert to grams
-WVMR = WVMR * units('g/kg')
-e_1 = mpcalc.vapor_pressure(p_NUCAPS_orig, WVMR)
-T_d = mpcalc.dewpoint(e_1)
-
-df_Temp_D = pd.DataFrame(T_d)
-df_Temp_D = df_Temp_D.loc[[index_CP],:].T
-df_Temp_D.columns = ['FG_Temperature_D']
-df_Temp_D = df_Temp_D[0:int(index_min_pressure)]
-FG_T_d_NUCAPS = (df_Temp_D['FG_Temperature_D'].values)
-
-df_Temp_D = pd.DataFrame(T_d.magnitude)
-df_Temp_D = df_Temp_D.loc[[index_CP],:].T
-df_Temp_D.columns = ['FG_Temperature_D']
-df_Temp_D = df_Temp_D[0:int(index_min_pressure)]
-FG_T_d_NUCAPS_1 = (df_Temp_D['FG_Temperature_D'].values)
 
 ### Interpolate RS grid to Satellite grid ###
 # Variante 1) Find closest value
@@ -297,12 +269,11 @@ p_RS = p_NUCAPS
 #T_d_RS_original = interpolate_1d(p_NUCAPS, p_RS_original, T_d_RS_original, axis = 0)
 
 ##############################  RALMO ##############################
-RA_data = xr.open_dataset('/data/COALITION2/PicturesSatellite/results_NAL/RALMO/Payerne/RA_06610_concat.nc').to_dataframe()
+# what does "06610" stand for? 
+RA_data = xr.open_dataset(LIDAR_archive+'/RA_06610_concat.nc').to_dataframe()
 
-Time_RA=str(Year+Month+Day+Hour+Minute+Seconds)
-Time_RA_1= dt.datetime.strptime(Time_RA,dynfmt) + dt.timedelta(minutes=30)
-Time_RA=dt.datetime.strftime(Time_RA_1,dynfmt)
-RA_data = RA_data[RA_data.time_YMDHMS == int(Time_RA)]
+Time_RA = RS_time + dt.timedelta(minutes=30)
+RA_data = RA_data[RA_data.time_YMDHMS == int(dt.datetime.strftime(Time_RA,"%Y%m%d%H%M%S"))]
 
 data_comma_temp = RA_data[RA_data['temperature_K']!= 1e+07]
 
@@ -338,7 +309,7 @@ RH_RA = cc.relative_humidity_from_specific_humidity(spez_hum, temp_degC, p_1)
 fig, ax = plt.subplots(figsize = (5,12))
 ax.plot(RH_RA * 100, p_1, color = 'red')
 ax.plot(RH_RS, p_RS_original, color = 'black')
-ax.set_title(Time_RA_1, fontsize = 16)
+ax.set_title(Time_RA, fontsize = 16)
 ax.set_ylim(1050,400)
 ax.set_ylabel('Pressure [hPa]', fontsize = 16)
 ax.set_xlabel('RH [%]', fontsize = 16)
@@ -352,7 +323,7 @@ ax.tick_params(labelsize = 16)
 fig, ax = plt.subplots(figsize = (5,12))
 ax.plot(RH_RA * 100, z_RA, color = 'red', zorder = 5)
 ax.plot(RH_RS, z_RS, color = 'black')
-ax.set_title(Time_RA_1, fontsize = 16)
+ax.set_title(Time_RA, fontsize = 16)
 ax.set_ylim(0,10000)
 ax.set_ylabel('Altitude [m]', fontsize = 16)
 ax.set_xlabel('RH [%]', fontsize = 16)
@@ -368,28 +339,28 @@ skew.plot(p_RS_original, T_d_RS_original, color = 'red', linewidth=2, label = 'R
 
 # smoothed RS data
 skew.plot(p_RS_original, T_RS_smoothed, color = 'pink', linewidth = 2, label = 'RS T smoothed')
-skew.plot(p_RS_original, T_d_RS_smoothed, color = 'pink', linewidth=2, label = 'RS Td smoothed')
+skew.plot(p_RS_original, T_d_RS_smoothed, color = 'pink', linewidth=2, linestyle='dashed', label = 'RS Td smoothed')
 
 # lidar data
 skew.plot(p_1, temp_degC, color = 'black', linewidth = 2, zorder=0 ,label = 'Lidar T')
-skew.plot(p_1, temp_d_degC, color = 'black', linewidth = 2, zorder = 0, label = 'Lidar Td')
+skew.plot(p_1, temp_d_degC, color = 'black', linewidth = 2, linestyle='dashed', zorder = 0, label = 'Lidar Td')
 
 # satellite data
 ## temperature
 skew.plot(p_NUCAPS, T_NUCAPS,color = 'navy', linewidth=2, label = 'NUCAPS T')
-skew.plot(p_NUCAPS, T_d_NUCAPS, color = 'navy', linewidth=2, label = 'NUCAPS Td')
+skew.plot(p_NUCAPS, T_d_NUCAPS, color = 'navy', linewidth=2, linestyle='dashed', label = 'NUCAPS Td')
 
 ## MIT (only microwave retrieval) temperature
-skew.plot(p_NUCAPS, MIT_T_NUCAPS, color = 'steelblue', linewidth=2, label = 'NUCAPS MIT T')
-skew.plot(p_NUCAPS, MIT_T_d_NUCAPS, color = 'steelblue', linewidth=2, label = 'NUCAPS MIT Td')
+skew.plot(p_NUCAPS, MIT_T_NUCAPS, color = 'steelblue', linewidth=1.5, label = 'NUCAPS MIT T')
+skew.plot(p_NUCAPS, T_d_MIT_NUCAPS, color = 'steelblue', linewidth=1.5, linestyle='dashed', label = 'NUCAPS MIT Td')
 
-## FG (first guess) temperature
-skew.plot(p_NUCAPS, FG_T_NUCAPS, color = 'lightskyblue', linewidth=2, label = 'NUCAPS FG T')
-skew.plot(p_NUCAPS, FG_T_d_NUCAPS, color = 'lightskyblue', linewidth=2, label = 'NUCAPS FG Td')
+# FG (first guess) temperature
+skew.plot(p_NUCAPS, T_FG_NUCAPS, color = 'lightskyblue', linewidth=1, label = 'NUCAPS FG T')
+skew.plot(p_NUCAPS, T_d_FG_NUCAPS, color = 'lightskyblue', linewidth=1, linestyle='dashed', label = 'NUCAPS FG Td')
 
 # surface measurement
 skew.plot(pressure_hPa, temperature_degC, 'ro', color = 'orange', label = 'surf T')
-skew.plot(pressure_hPa, dewpoint_degC, 'ro', color = 'orange', label = 'surf Td')
+skew.plot(pressure_hPa, dewpoint_degC, 'bo', color = 'orange', label = 'surf Td')
 
 plt.ylabel('Pressure [hPa]', fontsize = 14)
 plt.xlabel('Temperature [°C]', fontsize = 14)
@@ -400,7 +371,7 @@ skew.ax.set_xlim(-60, 60)
 # textbox
 props = dict(boxstyle='round', facecolor='white', alpha=0.5)
 textstr = '\n'.join((
-    r'Date: %s'% (dt.datetime.strptime(Year+Month+Day+Hour,"%Y%m%d%H"),),
+    r'Date: %s'% (RS_time.strftime("%Y-%m-%d %H:%M"), ),
     r'Distance RS - NUCAPS (in km): %s' % (min_dist, ),
     r'Time difference NUCAPS: %s' % (time_dif, )))
     
@@ -408,6 +379,6 @@ skew.ax.text(0.02, 0.1, textstr, transform=skew.ax.transAxes,
              fontsize=12, verticalalignment='top', bbox=props)
 
 plt.legend()
-#Figure_name = Year + Month + Day + Hour + '_' + str(file_index) + '.png'
-#plt.savefig('/data/COALITION2/PicturesSatellite/results_NAL/Plots/' + Figure_name)
+#output_filename = RS_time.strftime("NUCAPS_skewT_%y%m%d%H%M.png") 
+#plt.savefig(OUTPUT_dir+'/'+ output_filename)
 plt.show()
