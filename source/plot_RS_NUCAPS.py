@@ -93,8 +93,8 @@ OUTPUT_dir    = '/data/COALITION2/PicturesSatellite/results_NAL/Plots/'
 ######################################## Load data and define numpy arrays ######################################## 
 if len(sys.argv) == 1:
     #use default date
-    RS_time=dt.datetime(2020,4,27,0,0,0)
-    SMN_time = dt.datetime(2020,4,27,0,0,0)
+    RS_time=dt.datetime(2020,1,14,0,0,0)
+    SMN_time = dt.datetime(2020,1,14,0,0,0)
 elif len(sys.argv) == 6:
     year   = int(sys.argv[1])
     month  = int(sys.argv[2])
