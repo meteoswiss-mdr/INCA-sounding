@@ -68,10 +68,23 @@ def extract_dewpoit_temperature_profile(T_d, index_CP, index_min_pressure, var_n
 
     return T_d_profile
 
+def mr2rh(T,r,p):
+    
+    r = r * 10**-3
+    f = 1.0016 + 3.15* 10**-6 * p - 0.074/p
+    ew = 6.112*np.exp(17.62*T/(243.12 + T))
+    eww = f * ew
+    ei = 6.112*np.exp(22.46*T/(272.62 + T))
+    eii = f * ei
+    e = r/(0.62198+r)*p
+    rhw = e/eww*100
+    rhi = e/eii*100
+    
+    return rhw, rhi
 
-######################################## Load data and define numpy arrays ######################################## 
+######################################## define paths ######################################## 
 
-SURF_archive = '/data/COALITION2/PicturesSatellite/results_NAL/'
+SMN_archive = '/data/COALITION2/PicturesSatellite/results_NAL/SwissMetNet/Payerne'
 RS_archive   = '/data/COALITION2/PicturesSatellite/results_NAL/Radiosondes/Payerne/'
 NUCAPS_list_dir = '/data/COALITION2/PicturesSatellite/results_NAL/NUCAPS/'
 LIDAR_archive = '/data/COALITION2/PicturesSatellite/results_NAL/RALMO/Payerne/'
@@ -80,7 +93,8 @@ OUTPUT_dir    = '/data/COALITION2/PicturesSatellite/results_NAL/Plots/'
 ######################################## Load data and define numpy arrays ######################################## 
 if len(sys.argv) == 1:
     #use default date
-    RS_time=dt.datetime(2020,4,27,0,0,0)
+    RS_time=dt.datetime(2020,1,14,0,0,0)
+    SMN_time = dt.datetime(2020,1,14,0,0,0)
 elif len(sys.argv) == 6:
     year   = int(sys.argv[1])
     month  = int(sys.argv[2])
@@ -89,19 +103,24 @@ elif len(sys.argv) == 6:
     minute = int(sys.argv[5])
     second = 0
     RS_time = dt.datetime(year,month,day,hour,minute,0)
+    SMN_time = dt.datetime(year,month,day,hour,minute,0)
 else:
     print("*** ERROR, unknown number of command line arguemnts")
     quit()
 
 
-##### Surface Measurement ##### -> to be downloaded
-data_surf = pd.read_csv(RS_time.strftime(SURF_archive+'/surf_stat_%Y%m%d%H%M00.txt'))
-lowest_pres_SMN = data_surf['90'][0]
+##### Surface Measurement #####
+SMN_data = xr.open_dataset(SMN_archive+'/SMN_concat1.nc').to_dataframe()
 
-pressure_hPa = data_surf['90'].values * units.hPa
-temperature_degC = data_surf['91'].values * units.degC
-relative_humidity_percent = data_surf['98'].values * units('percent')
-dewpoint_degC = cc.dewpoint_from_relative_humidity(temperature_degC, relative_humidity_percent)
+SMN_data = SMN_data[SMN_data.time_YMDHMS == int(SMN_time.strftime('%Y%m%d%H%M%S'))]
+SMN_data = SMN_data[SMN_data.pressure_hPa != 1000] # delete first row (undefined values)
+SMN_data = SMN_data.reset_index(drop=True)
+
+pressure_SMN = SMN_data.pressure_hPa.values * units.hPa
+temperature_SMN = SMN_data.temperature_degC.values * units.degC
+RH_SMN = SMN_data.relative_humidity_percent.values * units.percent
+temperature_d_SMN = cc.dewpoint_from_relative_humidity(temperature_SMN, RH_SMN)
+specific_humidity_SMN = cc.specific_humidity_from_dewpoint(temperature_d_SMN, pressure_SMN)
 
 ###### Radiosondes ######
 ### read Radiosonde file and save as dataframe ###
@@ -112,9 +131,7 @@ RS_data = RS_data[RS_data.time_YMDHMS == int(RS_time.strftime('%Y%m%d%H%M%S'))]
 RS_data = RS_data[RS_data.pressure_hPa != 1000] # delete first row (undefined values)
 RS_data = RS_data.reset_index(drop=True)
 
-### find pressure at 600 m (for altitude - pressure conversion of Lidar)
-nearest_value = find_nearest(RS_data.geopotential_altitude_m,600)
-lowest_pres_RS = float(RS_data.pressure_hPa[RS_data.geopotential_altitude_m==nearest_value])
+lowest_pres_RS = RS_data.pressure_hPa.iloc[0]
 
 ### define variables ###
 p_RS = RS_data.pressure_hPa
@@ -264,18 +281,14 @@ T_RS = interpolate_1d(p_NUCAPS, p_RS, T_RS, axis=0)
 T_d_RS = interpolate_1d(p_NUCAPS, p_RS, T_d_RS, axis = 0)
 p_RS = p_NUCAPS
 
-#p_RS_original = p_NUCAPS
-#T_RS_original = interpolate_1d(p_NUCAPS, p_RS_original, T_RS_original, axis=0)
-#T_d_RS_original = interpolate_1d(p_NUCAPS, p_RS_original, T_d_RS_original, axis = 0)
-
 ##############################  RALMO ##############################
-# what does "06610" stand for? 
-RA_data = xr.open_dataset(LIDAR_archive+'/RA_06610_concat.nc').to_dataframe()
+RA_data = xr.open_dataset(LIDAR_archive+'/RA_concat_wp').to_dataframe()
 
-Time_RA = RS_time + dt.timedelta(minutes=30)
+Time_RA = RS_time + dt.timedelta(minutes=0)
 RA_data = RA_data[RA_data.time_YMDHMS == int(dt.datetime.strftime(Time_RA,"%Y%m%d%H%M%S"))]
 
 data_comma_temp = RA_data[RA_data['temperature_K']!= 1e+07]
+data_comma_temp = data_comma_temp[['time_YMDHMS', 'altitude_m', 'specific_humidity_gkg-1','temperature_K', 'pressure_hPa']]
 
 # variables
 g = 9.81
@@ -286,31 +299,33 @@ z_RA = data_comma_temp['altitude_m']
 temp = data_comma_temp['temperature_K']
 T_RA = temp.values
 temp_degC = temp - 273.15
+
+p_1 = data_comma_temp.pressure_hPa
+specific_humidity_RA = data_comma_temp['specific_humidity_gkg-1']
+
+# relative humidity, differentiate between water and ice
+rhw, rhi = mr2rh(temp_degC, specific_humidity_RA, p_1)
+RH_RA = np.zeros(len(rhw))
+ind_tresh = data_comma_temp.index[data_comma_temp.altitude_m > 5000][0]
+RH_RA[0:ind_tresh] = rhw[0:ind_tresh]
+RH_RA[ind_tresh:-1] = rhi[ind_tresh:-1]
+RH_RA = RH_RA[0:len(RH_RA)]
+
+p_1 = p_1.values * units.hPa
 temp_degC = temp_degC.values * units.degC
 
-# calculate Lidar pressure levels with RS as lowest level 
-p_1 = np.zeros(len(z_RA))
-p_1[0] = lowest_pres_RS 
-integrant = g*m_mol_air/(R*T_RA)
-
-for i in range(1, len(z_RA)):
-    p_1[i] = lowest_pres_RS*math.exp(-np.trapz(integrant[0:i], z_RA[0:i]))
-
-p_1 = p_1 * units.hPa
-
-spez_hum = data_comma_temp['specific_humidity_gkg-1']
-spez_hum = spez_hum.values * units('g/kg')
-temp_d_degC = cc.dewpoint_from_specific_humidity(spez_hum, temp_degC, p_1)
-RH_RA = cc.relative_humidity_from_specific_humidity(spez_hum, temp_degC, p_1) 
+# calculate dew point temperature 
+specific_humidity_RA = specific_humidity_RA.values * units('g/kg')
+temp_d_degC = cc.dewpoint_from_specific_humidity(specific_humidity_RA, temp_degC, p_1)
 
 ####################################### Plot data and save figure ######################################## 
 ### compare Lidar and RS data 
 # Pressure coordinates
 fig, ax = plt.subplots(figsize = (5,12))
-ax.plot(RH_RA * 100, p_1, color = 'red')
+ax.plot(RH_RA[2:len(RH_RA)-1], p_1[2:len(p_1)-1], color = 'red')
 ax.plot(RH_RS, p_RS_original, color = 'black')
 ax.set_title(Time_RA, fontsize = 16)
-ax.set_ylim(1050,400)
+ax.set_ylim(1050,300)
 ax.set_ylabel('Pressure [hPa]', fontsize = 16)
 ax.set_xlabel('RH [%]', fontsize = 16)
 ax.set_yscale('log')
@@ -321,7 +336,7 @@ ax.tick_params(labelsize = 16)
 
 # Altitude coordinates
 fig, ax = plt.subplots(figsize = (5,12))
-ax.plot(RH_RA * 100, z_RA, color = 'red', zorder = 5)
+ax.plot(RH_RA[1:len(RH_RA)-1], z_RA[1:len(z_RA)-1], color = 'red', zorder = 5)
 ax.plot(RH_RS, z_RS, color = 'black')
 ax.set_title(Time_RA, fontsize = 16)
 ax.set_ylim(0,10000)
@@ -335,7 +350,7 @@ skew = SkewT(fig)
 
 # original RS data
 skew.plot(p_RS_original, T_RS_original, color = 'red', linewidth = 2, label = 'RS T')
-skew.plot(p_RS_original, T_d_RS_original, color = 'red', linewidth=2, label = 'RS Td')
+skew.plot(p_RS_original, T_d_RS_original, color = 'red', linewidth=2, linestyle = 'dashed', label = 'RS Td')
 
 # smoothed RS data
 skew.plot(p_RS_original, T_RS_smoothed, color = 'pink', linewidth = 2, label = 'RS T smoothed')
@@ -359,13 +374,13 @@ skew.plot(p_NUCAPS, T_FG_NUCAPS, color = 'lightskyblue', linewidth=1, label = 'N
 skew.plot(p_NUCAPS, T_d_FG_NUCAPS, color = 'lightskyblue', linewidth=1, linestyle='dashed', label = 'NUCAPS FG Td')
 
 # surface measurement
-skew.plot(pressure_hPa, temperature_degC, 'ro', color = 'orange', label = 'surf T')
-skew.plot(pressure_hPa, dewpoint_degC, 'bo', color = 'orange', label = 'surf Td')
+skew.plot(pressure_SMN, temperature_SMN, 'ro', color = 'orange', label = 'surf T')
+skew.plot(pressure_SMN, temperature_d_SMN, 'bo', color = 'orange', label = 'surf Td')
 
 plt.ylabel('Pressure [hPa]', fontsize = 14)
 plt.xlabel('Temperature [°C]', fontsize = 14)
 skew.ax.tick_params(labelsize = 14)
-skew.ax.set_ylim(1000, 100)
+#skew.ax.set_ylim(1000, 100)
 skew.ax.set_xlim(-60, 60)
 
 # textbox
