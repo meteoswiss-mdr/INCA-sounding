@@ -18,16 +18,28 @@ position_names={}
 position_names[tuple([46.82201, 6.93608])]='Payerne'
 
 ##################################################################
+a=1
+vars3D=["MIT_Temperature","Temperature","FG_Temperature","H2O","MIT_H2O","FG_H2O","H2O_MR","MIT_H2O_MR","FG_H2O_MR"]
+
+vars2D=["CrIS_FORs","View_Angle","Satellite_Height","FG_Mean_CO2","Mean_CO2","Solar_Zenith",
+        "Ascending_Descending","Topography","Land_Fraction","Surface_Pressure","Skin_Temperature","MIT_Skin_Temperature",
+        "FG_Skin_Temperature","MW_Surface_Class","MW_Surface_Emis","N_Smw_Per_FOV","nemis_Per_FOV","ncemis_Per_FOV",
+        "ncemis_Per_FOV","ncld_Per_FOV","Quality_Flag"]   #,"Time","Latitude","Longitude"
+
+vars1D=["quality_information"]
+
+
+##################################################################
 
 def find_NUCAPS_files(time_ref, dt1, dt2, NUCAPS_archive = "/data/COALITION2/database/NUCAPS/%Y/%m/%d/", verbose=False):
 
-    # input:
+    # input: 
     # time_ref  datetime   * reference date around you like to find NUCAPS files
     # dt1       delta time * dt to define start time (with respect to time_ref) when the search will start
     # dt2       delta time * dt to define end   time (with respect to time_ref) when the search will end
 
-    datetime_start = time_ref + timedelta(hours=dt1)
-    datetime_end   = time_ref + timedelta(hours=dt2)
+    datetime_start = time_ref + timedelta(minutes=dt1)
+    datetime_end   = time_ref + timedelta(minutes=dt2)
     print("*** find NUCAPS files between ", str(datetime_start), " and ", str(datetime_end))
     
     # find files from the current date 
@@ -57,9 +69,9 @@ def find_NUCAPS_files(time_ref, dt1, dt2, NUCAPS_archive = "/data/COALITION2/dat
         #if verbose:
         #    print(NUCAPS_file_dates[i])
 
-    # search for files between dt1 hours after radiosonde launch timestamp (before timestamp if dt1 is negative)
-    # to dt2 hours radiosonde after launch time stamp (before timestamp if dt2 is negative)
-    NUCAPS_files = NUCAPS_files[np.where( np.logical_and(time_ref + timedelta(hours=dt1)<NUCAPS_file_dates, NUCAPS_file_dates<time_ref + timedelta(hours=dt2)))]
+    # search for files between dt1 minutes after radiosonde launch timestamp (before timestamp if dt1 is negative)
+    # to dt2 minutes radiosonde after launch time stamp (before timestamp if dt2 is negative)
+    NUCAPS_files = NUCAPS_files[np.where( np.logical_and(time_ref + timedelta(minutes=dt1)<NUCAPS_file_dates, NUCAPS_file_dates<time_ref + timedelta(minutes=dt2)))]
 
     if verbose:
         print("    found following files: ", NUCAPS_files)
@@ -125,11 +137,11 @@ def calc_distance_NUCAPS_to_location(time_ref, dt1, dt2, latlon_ref, cache=True,
     else:
         # read every file and calculate the distances between NUCAPS observation and latlon_ref
 
-        # search NUCAPS files during the radio sonde ascent (specified as dt1 and dt2 in hours)
+        # search NUCAPS files during the radio sonde ascent (specified as dt1 and dt2 in minutes)
         NUCAPS_files = find_NUCAPS_files(time_ref, dt1, dt2, verbose=verbose)
         #print(NUCAPS_files)
         
-        files_and_distances = pd.DataFrame(columns = ['file','min_dist','index','datetime'])
+        files_and_distances = pd.DataFrame(columns = ['file','min_dist','min_index','datetime'])
 
         for NUCAPS_file in NUCAPS_files:
             if verbose:
@@ -157,7 +169,7 @@ def calc_distance_NUCAPS_to_location(time_ref, dt1, dt2, latlon_ref, cache=True,
 
             # save result in a pandas data frame  
             files_and_distances = files_and_distances.append({'file':NUCAPS_file,'min_dist':distances[index_min],
-                                                              'index':index_min, 'datetime':ds.datetime.data[index_min]}, ignore_index=True)
+                                                              'min_index':index_min, 'datetime':ds.datetime.data[index_min]}, ignore_index=True)
             #print(NUCAPS_file, lats[index_min], lons[index_min], distances[index_min], ds.Time.data[index_min], ds['datetime'].data[index_min])
 
         #print(files_and_distances)
@@ -185,17 +197,18 @@ def get_position_name(latlon):
 
 def create_dummy_profile(time_ref, var_names):
 
-    # print("... read, ", "dummy_profile.nc")
+    print("... read, ", "dummy_profile.nc")
     dummy_profile = xr.open_dataset("dummy_profile.nc", decode_times=False)
 
     #print("replace time variable")
     dt64 = np.datetime64(time_ref)
     ts = (dt64 - np.datetime64('1970-01-01T00:00:00')) / np.timedelta64(1, 'ms')
     dummy_profile.coords['Time'].data = ts
+    #dummy_profile.coords['Latitude'].data = np.nan
+    #dummy_profile.coords['Longitude'].data = np.nan
 
-    #print("fill all variables with not a number") 
-    for var in var_names:
-        dummy_profile[var].data[:]=np.nan
+    #for var in var_names: 
+    #    print (dummy_profile[var].data, type(dummy_profile[var].data))
         
     return dummy_profile
 
@@ -206,8 +219,8 @@ def get_closest_NUCAPS_profile(time_ref, dt1, dt2, dx, latlon_ref, var_names=['T
     # function to return closest NUCAPS profile in terms of time and space
     # input
     # time_ref datetime_object * reference time
-    # dt1      int             * timedelta in hours before time_ref, where collocations are accepted
-    # dt2      int             * timedelta in hours after time_ref,  where collocations are accepted
+    # dt1      int             * timedelta in minutes before time_ref, where collocations are accepted
+    # dt2      int             * timedelta in minutes after time_ref,  where collocations are accepted
     # dx       int             * maximum horizontal distance in km
     # vars     string array    * variables that should be extracted from NUCAPS file 
      
@@ -217,14 +230,24 @@ def get_closest_NUCAPS_profile(time_ref, dt1, dt2, dx, latlon_ref, var_names=['T
     if files_and_distances.shape[0] > 0:
         min_dist = np.min(files_and_distances.min_dist)
         if min_dist < dx:
-            i_min = np.where(files_and_distances.min_dist == np.min(files_and_distances.min_dist))[0][0]
+            i_file = np.where(files_and_distances.min_dist == np.min(files_and_distances.min_dist))[0][0]
 
-            NUCAPS_file = files_and_distances.file.iloc[i_min]
-            print("... read data from: ", NUCAPS_file, ", distance: ", files_and_distances.min_dist.iloc[i_min], " km")
+            NUCAPS_file = files_and_distances.file.iloc[i_file]
+            print("... read data from: ", NUCAPS_file, ", distance: ", files_and_distances.min_dist.iloc[i_file], " km")
             ds = xr.open_dataset(NUCAPS_file, decode_times=False)
+            # index with minimum distance within the file 
+            i_min = files_and_distances.min_index[i_file]
+            
+            # create fake distance xarray 
+            dist_xr = xr.DataArray(np.full(ds["Skin_Temperature"].size,np.nan), coords=ds["Skin_Temperature"].coords, dims=ds["Skin_Temperature"].dims)
+            dist_xr.name="distance"
+            dist_xr[i_min] = min_dist
+            ds["distance"]=dist_xr
+            #print(ds["distance"],ds["distance"]["Number_of_CrIS_FORs"==i_min],ds["distance"][i_min],i_min)
             
             #return ds[var]["Number_of_CrIS_FORs"==i_min]
-            return xr.merge([ds[var]["Number_of_CrIS_FORs"==i_min] for var in var_names])
+            #return xr.merge([ds[var]["Number_of_CrIS_FORs"==i_min] for var in var_names])
+            return xr.merge([ds[var][i_min] for var in var_names])
         else:
             print("!!! no matching profile found, min_dist=", min_dist, ", return dummy profile")
             return create_dummy_profile(time_ref, var_names)
@@ -239,6 +262,7 @@ if __name__ == '__main__':
     if len(sys.argv) == 1:
         #use default date
         datetime_RS = datetime(2019,5,1,0,0)
+        #datetime_RS = datetime(2020,1,17,0,0)
     elif len(sys.argv) == 6:
         year    = int(sys.argv[1])
         month   = int(sys.argv[2])
@@ -253,17 +277,22 @@ if __name__ == '__main__':
         
     tt = deepcopy(datetime_RS)
     latlon_payerne = [46.82201, 6.93608]
-    dt1 = -60 # delta time in min before (negative) time_ref to search for NUCAPS files 
-    dt2 =   0 # delta time in min after  (positive) time_ref to search for NUCAPS files
+    #dt1 = -60 # delta time in min before (negative) time_ref to search for NUCAPS files 
+    #dt2 =   0 # delta time in min after  (positive) time_ref to search for NUCAPS files
+    dt1 = -120 # delta time in min before (negative) time_ref to search for NUCAPS files 
+    dt2 =   60 # delta time in min after  (positive) time_ref to search for NUCAPS files
+    dx = 3500
     
     time_end = datetime_RS + timedelta(days=366)
+    #time_end = datetime_RS + timedelta(days=5)
     #var_names = ["Pressure","Effective_Pressure","MIT_Temperature","Temperature","FG_Temperature","H2O","MIT_H2O","FG_H2O","H2O_MR","MIT_H2O_MR","FG_H2O_MR"]
-    var_names = ["MIT_Temperature","Temperature","FG_Temperature","H2O","MIT_H2O","FG_H2O","H2O_MR","MIT_H2O_MR","FG_H2O_MR"]
+    var_names = ["MIT_Temperature","Temperature","FG_Temperature","H2O","MIT_H2O","FG_H2O","H2O_MR","MIT_H2O_MR","FG_H2O_MR"] + vars2D + ["distance"]
+    #var_names = ["MIT_Temperature","Surface_Pressure", "MW_Surface_Class", "distance"]
     
     while tt < time_end:
         
         # get profiles from the closest observation 
-        profile = get_closest_NUCAPS_profile(tt, dt1, dt2, 500, latlon_payerne, var_names=var_names)
+        profile = get_closest_NUCAPS_profile(tt, dt1, dt2, dx, latlon_payerne, var_names=var_names)
 
         # if variable collocated_profiles already exists 
         
@@ -271,12 +300,24 @@ if __name__ == '__main__':
             collocated_profiles = xr.concat([ collocated_profiles, profile ], 'Number_of_CrIS_FORs')
         else:
             collocated_profiles = deepcopy(profile)
-            #dummy_profile = deepcopy(profile)
-            #dummy_profile.to_netcdf("dummy_profile.nc")
+
+        #only needed once for a set of variables, only work if there is a collocated NUCAPS measurement 
+        save_dummy_profile=False
+        if save_dummy_profile:
+            print("... create dummpy profile")
+            collocated_profiles = deepcopy(profile)
+            dummy_profile = deepcopy(profile) 
+            for var in var_names:
+                if var in vars2D+["distance"]:
+                    dummy_profile[var].data = np.nan
+                else:    
+                    dummy_profile[var].data[:] = np.nan
+            dummy_profile.to_netcdf("dummy_profile.nc")
     
         tt += timedelta(hours=12)
 
     #print(collocated_profiles)
-    ncfile_collocated = "NUCAPS_"+get_position_name(latlon_payerne)+"_"+'{:d}'.format(dt1)+"min_"+'{:d}'.format(dt2)+"min_"+'{:d}'.format(dt2)+"km.nc"
+    ncfile_collocated = "NUCAPS_"+get_position_name(latlon_payerne)+"_"+'{:d}'.format(dt1)+"min_"+'{:d}'.format(dt2)+"min_"+'{:d}'.format(dx)+"km.nc"
+    #ncfile_collocated = "test_"+get_position_name(latlon_payerne)+"_"+'{:d}'.format(dt1)+"min_"+'{:d}'.format(dt2)+"min_"+'{:d}'.format(dx)+"km.nc"
     collocated_profiles.to_netcdf(ncfile_collocated)
     
