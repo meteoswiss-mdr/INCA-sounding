@@ -98,6 +98,19 @@ def distance(origin, destination):
 
 ##################################################################
 
+def roundTime(dt=None, roundTo=60):
+   """Round a datetime object to any time lapse in seconds
+   dt : datetime.datetime object, default now.
+   roundTo : Closest number of seconds to round to, default 1 minute.
+   Author: Thierry Husson 2012 - Use it as you want but don't blame me.
+   """
+   if dt == None : dt = datetime.now()
+   seconds = (dt.replace(tzinfo=None) - dt.min).seconds
+   rounding = (seconds+roundTo/2) // roundTo * roundTo
+   return dt + timedelta(0,rounding-seconds,-dt.microsecond)
+
+##################################################################
+
 def open_NUCAPS_file(NUCAPS_file, remove_data_below_surface=True, verbose=False):
     ## read variable with lat/lon coordinates        
     ds = xr.open_dataset(NUCAPS_file, decode_times=False)  # time units are non-standard, so we dont decode them here
@@ -125,6 +138,12 @@ def open_NUCAPS_file(NUCAPS_file, remove_data_below_surface=True, verbose=False)
         print("*** ERROR in open_NUCAPS_file (collocation_NUCPAS.py)")
         print("    unknown time units "+units)
         quit()
+
+    # round ds.datetime by 6 hours = 360min -> add 180min and trancate by 360min
+    NUCAPS_datetimes_rounded = np.array(ds.datetime+np.timedelta64(180,'m'), dtype='datetime64[360m]')
+    NUCAPS_datetimes_rounded_xr = xr.DataArray(NUCAPS_datetimes_rounded, coords=ds.Time.coords, dims=ds.Time.dims)
+    NUCAPS_datetimes_rounded_xr.name = "datetime_rounded"
+    ds["datetime_rounded"] = NUCAPS_datetimes_rounded_xr
         
     #### old version to open NUCAPS with pytroll, but xarray is more flexible and "lazy"
     ##variables=["Temperature"]
