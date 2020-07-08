@@ -98,16 +98,34 @@ def distance(origin, destination):
 
 ##################################################################
 
-def open_NUCAPS_file(NUCAPS_file):
+def open_NUCAPS_file(NUCAPS_file, remove_data_below_surface=True, verbose=False):
     ## read variable with lat/lon coordinates        
     ds = xr.open_dataset(NUCAPS_file, decode_times=False)  # time units are non-standard, so we dont decode them here
-    
+
+    ## remove data for pressures higher than surface pressures
+    if remove_data_below_surface:
+        for var in ds.keys():
+            if "Pressure" in ds[var].coords:
+                if verbose:
+                    print ("    remove values below surface pressure for "+var)
+                ds[var] =  ds[var].where(ds[var].coords["Pressure"] < ds["Surface_Pressure"])
+        
     # convert Time into datetime objects 
     units, reference_date = ds.Time.attrs['units'].split(' since ')
     if units=='msec':
         ref_date = datetime.strptime(reference_date,"%Y-%m-%dT%H:%M:%SZ") # usually '1970-01-01T00:00:00Z'
-        ds['datetime'] = [ -1 if np.isnan(t) else ref_date + timedelta(milliseconds=t) for t in ds.Time.data]
-
+        NUCAPS_datetimes = [ -1 if np.isnan(t) else ref_date + timedelta(milliseconds=t) for t in ds.Time.data]
+        NUCAPS_datetimes_xr = xr.DataArray(NUCAPS_datetimes, coords=ds.Time.coords, dims=ds.Time.dims)
+        NUCAPS_datetimes_xr.name = "datetime"
+        # datetime is saved as np.datetime64, when searching for a certain time convert to this data type before
+        # time_ref = datetime.strptime('2020-05-02T00:04:07.983000', '%Y-%m-%dT%H:%M:%S.%f')
+        # ds.Temperature[np.where(ds.datetimes == np.datetime64(time_ref))].values
+        ds["datetime"] = NUCAPS_datetimes_xr
+    else:
+        print("*** ERROR in open_NUCAPS_file (collocation_NUCPAS.py)")
+        print("    unknown time units "+units)
+        quit()
+        
     #### old version to open NUCAPS with pytroll, but xarray is more flexible and "lazy"
     ##variables=["Temperature"]
     ##global_scene = Scene(reader="nucaps", filenames=[NUCAPS_file])
@@ -234,7 +252,8 @@ def get_closest_NUCAPS_profile(time_ref, dt1, dt2, dx, latlon_ref, var_names=['T
 
             NUCAPS_file = files_and_distances.file.iloc[i_file]
             print("... read data from: ", NUCAPS_file, ", distance: ", files_and_distances.min_dist.iloc[i_file], " km")
-            ds = xr.open_dataset(NUCAPS_file, decode_times=False)
+            ds = open_NUCAPS_file(NUCAPS_file)
+            
             # index with minimum distance within the file 
             i_min = files_and_distances.min_index[i_file]
             
@@ -262,7 +281,7 @@ if __name__ == '__main__':
     if len(sys.argv) == 1:
         #use default date
         datetime_RS = datetime(2019,5,1,0,0)
-        #datetime_RS = datetime(2020,1,17,0,0)
+        #datetime_RS = datetime(2020,5,2,0,0)
     elif len(sys.argv) == 6:
         year    = int(sys.argv[1])
         month   = int(sys.argv[2])
@@ -277,14 +296,14 @@ if __name__ == '__main__':
         
     tt = deepcopy(datetime_RS)
     latlon_payerne = [46.82201, 6.93608]
-    #dt1 = -60 # delta time in min before (negative) time_ref to search for NUCAPS files 
-    #dt2 =   0 # delta time in min after  (positive) time_ref to search for NUCAPS files
-    dt1 = -120 # delta time in min before (negative) time_ref to search for NUCAPS files 
-    dt2 =   60 # delta time in min after  (positive) time_ref to search for NUCAPS files
+    dt1 = -60 # delta time in min before (negative) time_ref to search for NUCAPS files 
+    dt2 =   0 # delta time in min after  (positive) time_ref to search for NUCAPS files
+    #dt1 = -120 # delta time in min before (negative) time_ref to search for NUCAPS files 
+    #dt2 =   60 # delta time in min after  (positive) time_ref to search for NUCAPS files
     dx = 3500
     
     time_end = datetime_RS + timedelta(days=366)
-    #time_end = datetime_RS + timedelta(days=5)
+    #time_end = datetime_RS + timedelta(days=1)
     #var_names = ["Pressure","Effective_Pressure","MIT_Temperature","Temperature","FG_Temperature","H2O","MIT_H2O","FG_H2O","H2O_MR","MIT_H2O_MR","FG_H2O_MR"]
     var_names = ["MIT_Temperature","Temperature","FG_Temperature","H2O","MIT_H2O","FG_H2O","H2O_MR","MIT_H2O_MR","FG_H2O_MR"] + vars2D + ["distance"]
     #var_names = ["MIT_Temperature","Surface_Pressure", "MW_Surface_Class", "distance"]
