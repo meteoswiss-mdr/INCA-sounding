@@ -467,11 +467,13 @@ while firstobj != lastobj:
     MEAN_PROFILES_archive = '/data/COALITION2/PicturesSatellite/results_NAL/Plots/mean_profiles'
     BIAS_archive = '/data/COALITION2/PicturesSatellite/results_NAL/Plots/bias'
     STD_archive = '/data/COALITION2/PicturesSatellite/results_NAL/Plots/std'
+    RM_archive = '/data/COALITION2/PicturesSatellite/results_NAL/radiometer_payerne
     
     ## read data
     RS_data = xr.open_dataset(RS_archive+'/RS_concat.nc').to_dataframe()
     RA_data = xr.open_dataset(RA_archive+'/RA_concat_wp').to_dataframe()
     SMN_data = xr.open_dataset(SMN_archive+'/SMN_concat1.nc').to_dataframe()
+    RM_data = xr.open_dataset(RM_archive+'/radiometer_06610_concat.nc').to_dataframe()
     #NUCAPS_data = open_NUCAPS_file(NUCAPS_archive+'/NUCAPS_Payerne_-60min_0min_3500km.nc')
     NUCAPS_data = open_NUCAPS_file(NUCAPS_archive+'/NUCAPS_Payerne_-120min_60min_3500km.nc')
     INCA_grid = pd.read_csv(INCA_archive+'/INCA_grid.csv') 
