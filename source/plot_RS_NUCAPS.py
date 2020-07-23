@@ -82,19 +82,29 @@ def mr2rh(T,r,p):
     
     return rhw, rhi
 
+def nearest(items, pivot):
+    return min(items, key=lambda x: abs(x - pivot))
+
 ######################################## define paths ######################################## 
 
 SMN_archive = '/data/COALITION2/PicturesSatellite/results_NAL/SwissMetNet/Payerne'
 RS_archive   = '/data/COALITION2/PicturesSatellite/results_NAL/Radiosondes/Payerne/'
-NUCAPS_list_dir = '/data/COALITION2/PicturesSatellite/results_NAL/NUCAPS/'
+NUCAPS_list_dir = '/data/COALITION2/PicturesSatellite/results_NAL/NUCAPS/txtfiles'
 LIDAR_archive = '/data/COALITION2/PicturesSatellite/results_NAL/RALMO/Payerne/'
 OUTPUT_dir    = '/data/COALITION2/PicturesSatellite/results_NAL/Plots/'
+RM_archive = '/data/COALITION2/PicturesSatellite/results_NAL/Radiometer/radiometer_payerne'
+INCA_archive = '/data/COALITION2/PicturesSatellite/results_NAL'
+
+COSMO_archive = '/data/COALITION2/database/cosmo/T-TD_3D/'
+COSMO_coordinate = '/data/COALITION2/PicturesSatellite/results_NAL/COSMO/'
+INCA_grid = pd.read_csv(INCA_archive+'/INCA_grid.csv') 
 
 ######################################## Load data and define numpy arrays ######################################## 
 if len(sys.argv) == 1:
     #use default date
-    RS_time=dt.datetime(2020,1,14,0,0,0)
-    SMN_time = dt.datetime(2020,1,14,0,0,0)
+    RS_time=dt.datetime(2020,4,27,0,0,0)
+    SMN_time = dt.datetime(2020,4,27,0,0,0)
+    COSMO_time = dt.datetime(2020,7,22,0,0,0)
 elif len(sys.argv) == 6:
     year   = int(sys.argv[1])
     month  = int(sys.argv[2])
@@ -108,8 +118,9 @@ else:
     print("*** ERROR, unknown number of command line arguemnts")
     quit()
 
-
-##### Surface Measurement #####
+#########################################
+##### A) SMN: Surface measurement
+#########################################
 SMN_data = xr.open_dataset(SMN_archive+'/SMN_concat1.nc').to_dataframe()
 
 SMN_data = SMN_data[SMN_data.time_YMDHMS == int(SMN_time.strftime('%Y%m%d%H%M%S'))]
@@ -122,9 +133,13 @@ RH_SMN = SMN_data.relative_humidity_percent.values * units.percent
 temperature_d_SMN = cc.dewpoint_from_relative_humidity(temperature_SMN, RH_SMN)
 specific_humidity_SMN = cc.specific_humidity_from_dewpoint(temperature_d_SMN, pressure_SMN)
 
-###### Radiosondes ######
+##########################################
+##### B) RS: RADIOSONDE 
+##########################################
 ### read Radiosonde file and save as dataframe ###
 RS_data = xr.open_dataset(RS_archive+'/RS_concat.nc').to_dataframe()
+#RS_data = pd.read_csv('/data/COALITION2/PicturesSatellite/results_NAL/Radiosondes/RS_20200722000000')
+RS_data = RS_data.rename(columns = {'termin':'time_YMDHMS', '744': 'pressure_hPa', '745':'temperature_degC', '746':'relative_humidity_percent', '742':'geopotential_altitude_m', '748':'wind_speed_ms-1', '743': 'wind_dir_deg', '747':'dew_point_degC' })
 
 ### choose desired time ###
 RS_data = RS_data[RS_data.time_YMDHMS == int(RS_time.strftime('%Y%m%d%H%M%S'))]
@@ -184,7 +199,9 @@ T_RS_smoothed = pd.DataFrame(T_RS_list)
 
 T_d_RS_smoothed = pd.DataFrame(T_d_RS_list) 
 
-##############################  NUCAPS ##############################
+##########################################
+##### C) NUCAPS: Satellite data 
+##########################################
 ### read file ###
 filtered_files = pd.read_csv(os.path.join(NUCAPS_list_dir, RS_time.strftime('%Y%m%d.txt')))
 
@@ -281,32 +298,33 @@ T_RS = interpolate_1d(p_NUCAPS, p_RS, T_RS, axis=0)
 T_d_RS = interpolate_1d(p_NUCAPS, p_RS, T_d_RS, axis = 0)
 p_RS = p_NUCAPS
 
-##############################  RALMO ##############################
+##########################################
+##### D) RALMO: Raman lidar 
+###########################################
 RA_data = xr.open_dataset(LIDAR_archive+'/RA_concat_wp').to_dataframe()
-
-Time_RA = RS_time + dt.timedelta(minutes=0)
+Time_RA = RS_time + dt.timedelta(minutes=30)
 RA_data = RA_data[RA_data.time_YMDHMS == int(dt.datetime.strftime(Time_RA,"%Y%m%d%H%M%S"))]
 
-data_comma_temp = RA_data[RA_data['temperature_K']!= 1e+07]
-data_comma_temp = data_comma_temp[['time_YMDHMS', 'altitude_m', 'specific_humidity_gkg-1','temperature_K', 'pressure_hPa']]
+RA_data = RA_data[RA_data['temperature_K']!= 1e+07]
+RA_data = RA_data[['time_YMDHMS', 'altitude_m', 'specific_humidity_gkg-1','temperature_K', 'pressure_hPa']]
 
 # variables
 g = 9.81
 m_mol_air = 28.965*10.0**(-3.0)
 R = 8.31446
-z_RA = data_comma_temp['altitude_m']
+z_RA = RA_data['altitude_m']
 
-temp = data_comma_temp['temperature_K']
+temp = RA_data['temperature_K']
 T_RA = temp.values
 temp_degC = temp - 273.15
 
-p_1 = data_comma_temp.pressure_hPa
-specific_humidity_RA = data_comma_temp['specific_humidity_gkg-1']
+p_1 = RA_data.pressure_hPa
+specific_humidity_RA = RA_data['specific_humidity_gkg-1']
 
 # relative humidity, differentiate between water and ice
 rhw, rhi = mr2rh(temp_degC, specific_humidity_RA, p_1)
 RH_RA = np.zeros(len(rhw))
-ind_tresh = data_comma_temp.index[data_comma_temp.altitude_m > 5000][0]
+ind_tresh = RA_data.index[RA_data.altitude_m > 5000][0]
 RH_RA[0:ind_tresh] = rhw[0:ind_tresh]
 RH_RA[ind_tresh:-1] = rhi[ind_tresh:-1]
 RH_RA = RH_RA[0:len(RH_RA)]
@@ -317,71 +335,207 @@ temp_degC = temp_degC.values * units.degC
 # calculate dew point temperature 
 specific_humidity_RA = specific_humidity_RA.values * units('g/kg')
 temp_d_degC = cc.dewpoint_from_specific_humidity(specific_humidity_RA, temp_degC, p_1)
+RA_data.dew_point_degC = temp_d_degC
+RA_data.temperature_degC = RA_data.temperature_K - 273.15
 
+########################################## 
+## E) RM: Radiometer 
+##########################################
+RM_data = xr.open_dataset(RM_archive+'/radiometer_06610_concat_filtered_0.nc').to_dataframe()
+RM_data = RM_data[RM_data.time_YMDHMS_1.dt.month == RS_time.month]
+RM_data = RM_data[RM_data.time_YMDHMS_1.dt.day == RS_time.day]
+date = nearest(RM_data.time_YMDHMS_1, RS_time)
+RM_data = RM_data[RM_data.time_YMDHMS_1 == date]
+
+RM_data["time_YMDHMS"] = RM_data.time_YMDHMS_1.dt.round('30min').values
+#RM_data['pressure_hPa'] = '0' 
+RM_data = RM_data.reset_index(drop=True)
+
+## add temperature in degC
+temp_K = RM_data.temperature_K - 273.15
+RM_data.insert(value=temp_K,column = "temperature_degC", loc=7)
+
+## add altitude_m
+RM_data.altitude_m = RM_data.altitude_m + 492
+
+## add dewpoint temperature
+dewpoint_degC = cc.dewpoint_from_relative_humidity(RM_data.temperature_degC.values * units.degC, RM_data.relative_humidity_percent.values * units.percent) 
+RM_data.insert(value=dewpoint_degC,column = "dew_point_degC", loc=6)
+
+# convert altitude into pressure coordinates
+g = 9.81
+m_mol_air = 28.965*10.0**(-3.0)
+R = 8.31446
+
+z_RM = RM_data['altitude_m']
+T_RM = RM_data['temperature_K']
+
+# calculate Lidar pressure levels with RS as lowest level 
+p_1 = np.zeros(len(z_RM))
+p_1[0] = SMN_data.pressure_hPa[0]
+integrant = g*m_mol_air/(R*T_RM)
+
+   
+for i in range(1, len(z_RM)):
+    p_1[i] = RS_data.pressure_hPa[0]*math.exp(-np.trapz(integrant[0:i], z_RM[0:i]))
+
+#RM_data.pressure_hPa = p_1[:]
+
+RM_data.pressure_hPa = metpy.calc.height_to_pressure_std(RM_data.altitude_m.values * units.meters)
+
+########################################## 
+## F) COSMO: Model data 
+##########################################
+COSMO_coordinate = pd.read_csv('/data/COALITION2/PicturesSatellite/results_NAL/COSMO//COSMO_coordindate_payerne.csv')
+#COSMO_data = xr.open_dataset(COSMO_archive+'cosmo1_inca_2020072006_01.nc').to_dataframe()
+#COSMO_data =    COSMO_data[COSMO_data.lat_1 == float(COSMO_coordinate.lat_1.values)] 
+#COSMO_data =    COSMO_data[COSMO_data.lon_1 == float(COSMO_coordinate.lon_1.values)] 
+COSMO_data = xr.open_dataset('/data/COALITION2/PicturesSatellite/results_NAL/COSMO/cosmo1_inca_merge_cut.nc').to_dataframe()
+COSMO_data = COSMO_data.reset_index().rename(columns = {'time' : 'time_YMDHMS', 'p_inca': 'pressure_hPa', 't_inca' : 'temperature_degC'})
+COSMO_data = COSMO_data[COSMO_data.time_YMDHMS == COSMO_time]
+# remove duplicate pressures
+COSMO_data = COSMO_data.loc[~COSMO_data.pressure_hPa.duplicated(keep='first')]
+COSMO_data.pressure_hPa  = COSMO_data.pressure_hPa / 100
+COSMO_data.temperature_degC  = COSMO_data.temperature_degC - 273.15
+
+# add altitude 
+## read INCA grid
+#INCA_altitudpd.read_csv('/data/COALITION2/database/NUCAPS/inca_topo_levels_hsurf_ccs4.nc')
+## extract altitudes at Payerne
+#COSMO_data.insert(value=INCA_grid.HHL.values, column = "altitude_m", loc = 0)
+
+
+# add dew point temperature 
+pressure_COSMO = COSMO_data.pressure_hPa.values * units.hPa
+temp_COSMO = (COSMO_data.temperature_degC.values -273.15) * units.degC
+specific_humidity_COSMO = COSMO_data.qv_inca.values * units('g/kg')
+temp_d_COSMO = cc.dewpoint_from_specific_humidity(specific_humidity_COSMO, temp_COSMO, pressure_COSMO)
+COSMO_data.insert(value=temp_d_COSMO, column = "dew_point_degC", loc = 36)
+
+
+#plt.plot(RM_data.temperature_degC, RM_data.altitude_m, color = 'black', linewidth = 2, zorder=0 ,label = 'Lidar T')
+#plt.plot(RM_data.dew_point_degC,RM_data.altitude_m, color = 'black', linewidth = 2, linestyle='dashed', zorder = 0, label = 'Lidar Td')
+
+#plt.plot(RM_data.temperature_degC, RM_data.pressure_hPa, color = 'black', linewidth = 2, zorder=0 ,label = 'Lidar T')
+#plt.plot(RM_data.dew_point_degC,RM_data.pressure_hPa, color = 'black', linewidth = 2, linestyle='dashed', zorder = 0, label = 'Lidar Td')
+#plt.gca().invert_yaxis()
 ####################################### Plot data and save figure ######################################## 
 ### compare Lidar and RS data 
 # Pressure coordinates
+#fig, ax = plt.subplots(figsize = (5,12))
+#ax.plot(RH_RA[2:len(RH_RA)-1], p_1[2:len(p_1)-1], color = 'red')
+#ax.plot(RH_RS, p_RS_original, color = 'black')
+#ax.set_title(Time_RA, fontsize = 16)
+#ax.set_ylim(1050,300)
+#ax.set_ylabel('Pressure [hPa]', fontsize = 16)
+#ax.set_xlabel('RH [%]', fontsize = 16)
+#ax.set_yscale('log')
+#ax.yaxis.set_major_formatter(ScalarFormatter())
+#ax.yaxis.set_major_locator(MultipleLocator(100))
+#ax.yaxis.set_minor_formatter(NullFormatter())
+#ax.tick_params(labelsize = 16)
+
+# Altitude coordinates
+#fig, ax = plt.subplots(figsize = (5,12))
+#ax.plot(RH_RA[1:len(RH_RA)-1], z_RA[1:len(z_RA)-1], color = 'red', zorder = 5)
+#ax.plot(RH_RS, z_RS, color = 'black')
+#ax.set_title(Time_RA, fontsize = 16)
+#ax.set_ylim(0,10000)
+#ax.set_ylabel('Altitude [m]', fontsize = 16)
+#ax.set_xlabel('RH [%]', fontsize = 16)
+#ax.tick_params(labelsize = 16)
+
+# Pressure coordinates
 fig, ax = plt.subplots(figsize = (5,12))
-ax.plot(RH_RA[2:len(RH_RA)-1], p_1[2:len(p_1)-1], color = 'red')
-ax.plot(RH_RS, p_RS_original, color = 'black')
-ax.set_title(Time_RA, fontsize = 16)
-ax.set_ylim(1050,300)
+ax.plot(RM_data.temperature_degC, RM_data.pressure_hPa, color = 'red', zorder = 5)
+ax.plot(T_RS_original, p_RS_original, color = 'black')
+#ax.set_title(Time_RA, fontsize = 16)
+ax.set_ylim(1050,200)
+#ax.set_xlim(0,20,2)
 ax.set_ylabel('Pressure [hPa]', fontsize = 16)
-ax.set_xlabel('RH [%]', fontsize = 16)
+ax.set_xlabel('temperature [°C]', fontsize = 16)
 ax.set_yscale('log')
 ax.yaxis.set_major_formatter(ScalarFormatter())
 ax.yaxis.set_major_locator(MultipleLocator(100))
 ax.yaxis.set_minor_formatter(NullFormatter())
 ax.tick_params(labelsize = 16)
+ax.grid()
 
 # Altitude coordinates
 fig, ax = plt.subplots(figsize = (5,12))
-ax.plot(RH_RA[1:len(RH_RA)-1], z_RA[1:len(z_RA)-1], color = 'red', zorder = 5)
-ax.plot(RH_RS, z_RS, color = 'black')
-ax.set_title(Time_RA, fontsize = 16)
-ax.set_ylim(0,10000)
-ax.set_ylabel('Altitude [m]', fontsize = 16)
-ax.set_xlabel('RH [%]', fontsize = 16)
+ax.plot(RM_data.temperature_degC, RM_data.altitude_m, color = 'red', zorder = 5)
+ax.plot(T_RS_original, z_RS, color = 'black')
+#ax.set_title(Time_RA, fontsize = 16)
+ax.set_ylim(0,12000)
+#ax.set_xlim(0,20,2)
+#ax.set_xticks(np.arange(0,20,2))
+ax.set_ylabel('Alltitude [m]', fontsize = 16)
+ax.set_xlabel('temperature [°C]', fontsize = 16)
 ax.tick_params(labelsize = 16)
+ax.grid()
 
-### Skew t log p diagram ###
+
 fig = plt.figure(figsize=(9, 9))
 skew = SkewT(fig)
 
+#########################################
+##### A) SMN: Surface measurement
+#########################################
+skew.plot(pressure_SMN, temperature_SMN, 'ro', color = 'orange', label = 'surf T')
+skew.plot(pressure_SMN, temperature_d_SMN, 'bo', color = 'orange', label = 'surf Td')
+
+##########################################
+##### B) RS: RADIOSONDE 
+##########################################
 # original RS data
 skew.plot(p_RS_original, T_RS_original, color = 'red', linewidth = 2, label = 'RS T')
 skew.plot(p_RS_original, T_d_RS_original, color = 'red', linewidth=2, linestyle = 'dashed', label = 'RS Td')
 
 # smoothed RS data
-skew.plot(p_RS_original, T_RS_smoothed, color = 'pink', linewidth = 2, label = 'RS T smoothed')
-skew.plot(p_RS_original, T_d_RS_smoothed, color = 'pink', linewidth=2, linestyle='dashed', label = 'RS Td smoothed')
+#skew.plot(p_RS_original, T_RS_smoothed, color = 'pink', linewidth = 2, label = 'RS T smoothed')
+#skew.plot(p_RS_original, T_d_RS_smoothed, color = 'pink', linewidth=2, linestyle='dashed', label = 'RS Td smoothed')
 
-# lidar data
-skew.plot(p_1, temp_degC, color = 'black', linewidth = 2, zorder=0 ,label = 'Lidar T')
-skew.plot(p_1, temp_d_degC, color = 'black', linewidth = 2, linestyle='dashed', zorder = 0, label = 'Lidar Td')
-
-# satellite data
+##########################################
+##### C) NUCAPS: Satellite data 
+##########################################
 ## temperature
 skew.plot(p_NUCAPS, T_NUCAPS,color = 'navy', linewidth=2, label = 'NUCAPS T')
 skew.plot(p_NUCAPS, T_d_NUCAPS, color = 'navy', linewidth=2, linestyle='dashed', label = 'NUCAPS Td')
 
 ## MIT (only microwave retrieval) temperature
-skew.plot(p_NUCAPS, MIT_T_NUCAPS, color = 'steelblue', linewidth=1.5, label = 'NUCAPS MIT T')
-skew.plot(p_NUCAPS, T_d_MIT_NUCAPS, color = 'steelblue', linewidth=1.5, linestyle='dashed', label = 'NUCAPS MIT Td')
+#skew.plot(p_NUCAPS, MIT_T_NUCAPS, color = 'steelblue', linewidth=1.5, label = 'NUCAPS MIT T')
+#skew.plot(p_NUCAPS, T_d_MIT_NUCAPS, color = 'steelblue', linewidth=1.5, linestyle='dashed', label = 'NUCAPS MIT Td')
 
 # FG (first guess) temperature
-skew.plot(p_NUCAPS, T_FG_NUCAPS, color = 'lightskyblue', linewidth=1, label = 'NUCAPS FG T')
-skew.plot(p_NUCAPS, T_d_FG_NUCAPS, color = 'lightskyblue', linewidth=1, linestyle='dashed', label = 'NUCAPS FG Td')
+#skew.plot(p_NUCAPS, T_FG_NUCAPS, color = 'lightskyblue', linewidth=1, label = 'NUCAPS FG T')
+#skew.plot(p_NUCAPS, T_d_FG_NUCAPS, color = 'lightskyblue', linewidth=1, linestyle='dashed', label = 'NUCAPS FG Td')
 
-# surface measurement
-skew.plot(pressure_SMN, temperature_SMN, 'ro', color = 'orange', label = 'surf T')
-skew.plot(pressure_SMN, temperature_d_SMN, 'bo', color = 'orange', label = 'surf Td')
+##########################################
+##### D) RALMO: Raman lidar 
+###########################################
+skew.plot(RA_data.pressure_hPa, RA_data.temperature_degC, color = 'black', linewidth = 2, zorder=0 ,label = 'Lidar T')
+skew.plot(RA_data.pressure_hPa, RA_data.dew_point_degC, color = 'black', linewidth = 2, linestyle='dashed', zorder = 0, label = 'Lidar Td')
+
+########################################## 
+##### E) RM: Radiometer 
+##########################################
+skew.plot(RM_data.pressure_hPa, RM_data.temperature_degC, color = 'green', linewidth = 2, zorder=0 ,label = 'Radiometer T')
+skew.plot(RM_data.pressure_hPa, RM_data.dew_point_degC, color = 'green', linewidth = 2, linestyle='dashed', zorder = 0, label = 'Radiometer Td')
+
+########################################## 
+## F) COSMO: Model data 
+##########################################
+#skew.plot(COSMO_data.pressure_hPa, COSMO_data.temperature_degC, color = 'orangered', linewidth = 2, zorder=0 ,label = 'COSMO T')
+#skew.plot(COSMO_data.pressure_hPa, COSMO_data.dew_point_degC, color = 'orangered', linewidth = 2, linestyle='dashed', zorder = 0, label = 'COSMO Td')
+
 
 plt.ylabel('Pressure [hPa]', fontsize = 14)
 plt.xlabel('Temperature [°C]', fontsize = 14)
 skew.ax.tick_params(labelsize = 14)
 #skew.ax.set_ylim(1000, 100)
 skew.ax.set_xlim(-60, 60)
+
+
 
 # textbox
 props = dict(boxstyle='round', facecolor='white', alpha=0.5)
