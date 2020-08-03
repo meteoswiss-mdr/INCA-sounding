@@ -14,8 +14,11 @@ from os import path
 from copy import deepcopy
 #from satpy import Scene
 
+# see position of radiosondes in Europe http://radiosonde.eu/RS00-D/RS02C-D.html
 position_names={}
 position_names[tuple([46.82201, 6.93608])]='Payerne'
+position_names[tuple([45.4605,  9.2602 ])]='Milan'
+position_names[tuple([48.244,  11.552  ])]='Munich'
 
 ##################################################################
 a=1
@@ -152,6 +155,7 @@ def open_NUCAPS_file(NUCAPS_file, remove_data_below_surface=True, verbose=False)
     ##lons = global_scene[variables[0]].coords['Longitude'].values
     ##lats = global_scene[variables[0]].coords['Latitude'].values
     
+    # ds needs to be closed in the main function with ds.close()
     return ds
 
 ##################################################################
@@ -161,8 +165,8 @@ def calc_distance_NUCAPS_to_location(time_ref, dt1, dt2, latlon_ref, cache=True,
     print("... calcualte distances to reference point: ", latlon_ref)
 
     if cache:
-        #cache_file = time_ref.strftime(cachedir+"%Y%m%d%H%M_NUCAPS_"+get_position_name(latlon_payerne)+"_"+'{:d}'.format(dt1)+"min_"+'{:d}'.format(dt2)+"min.txt")
-        cache_file = time_ref.strftime(cachedir+"%Y%m%d%H%M_NUCAPS_"+get_position_name(latlon_payerne)+"_"+'{:d}'.format(dt1)+"min_"+'{:d}'.format(dt2)+"min.pkl")
+        #cache_file = time_ref.strftime(cachedir+"%Y%m%d%H%M_NUCAPS_"+get_position_name(latlon_ref)+"_"+'{:d}'.format(dt1)+"min_"+'{:d}'.format(dt2)+"min.txt")
+        cache_file = time_ref.strftime(cachedir+"%Y%m%d%H%M_NUCAPS_"+get_position_name(latlon_ref)+"_"+'{:d}'.format(dt1)+"min_"+'{:d}'.format(dt2)+"min.pkl")
 
     if cache and path.exists(cache_file):
         if verbose:
@@ -209,7 +213,10 @@ def calc_distance_NUCAPS_to_location(time_ref, dt1, dt2, latlon_ref, cache=True,
                                                               'min_index':index_min, 'datetime':ds.datetime.data[index_min]}, ignore_index=True)
             #print(NUCAPS_file, lats[index_min], lons[index_min], distances[index_min], ds.Time.data[index_min], ds['datetime'].data[index_min])
 
-        #print(files_and_distances)
+            #close dataset
+            ds.close()
+
+            #print(files_and_distances)
         if cache:
             if verbose:
                 print("write calculated distances to ", cache_file)
@@ -294,6 +301,8 @@ def get_closest_NUCAPS_profile(time_ref, dt1, dt2, dx, latlon_ref, var_names=['T
         return create_dummy_profile(time_ref, var_names)
     
 ####################################################
+####################################################
+
 
 if __name__ == '__main__':
 
@@ -312,25 +321,42 @@ if __name__ == '__main__':
         print("*** ERROR, unknown number of command line arguements")
         print("    usage: python concat_NUCAPS.py 2020 02 01 12 00")
         quit()
-        
-    tt = deepcopy(datetime_RS)
-    latlon_payerne = [46.82201, 6.93608]
-    dt1 = -60 # delta time in min before (negative) time_ref to search for NUCAPS files 
-    dt2 =   0 # delta time in min after  (positive) time_ref to search for NUCAPS files
-    #dt1 = -120 # delta time in min before (negative) time_ref to search for NUCAPS files 
-    #dt2 =   60 # delta time in min after  (positive) time_ref to search for NUCAPS files
+
+####################################################
+    # this part could be changed by users
+
+    #latlon_radiosonde = [46.82201, 6.93608]  # payerne
+    latlon_radiosonde = [48.244,  11.552  ]  # munich
+    #latlon_radiosonde = [45.4605 ,  9.2602]  # milan
+
+    #dt1 = -60 # delta time in min before (negative) time_ref to search for NUCAPS files 
+    #dt2 =   0 # delta time in min after  (positive) time_ref to search for NUCAPS files
+    dt1 = -120 # delta time in min before (negative) time_ref to search for NUCAPS files 
+    dt2 =   60 # delta time in min after  (positive) time_ref to search for NUCAPS files
     dx = 3500
+
+    verbose=False
     
     time_end = datetime_RS + timedelta(days=366)
     #time_end = datetime_RS + timedelta(days=1)
     #var_names = ["Pressure","Effective_Pressure","MIT_Temperature","Temperature","FG_Temperature","H2O","MIT_H2O","FG_H2O","H2O_MR","MIT_H2O_MR","FG_H2O_MR"]
     var_names = ["MIT_Temperature","Temperature","FG_Temperature","H2O","MIT_H2O","FG_H2O","H2O_MR","MIT_H2O_MR","FG_H2O_MR"] + vars2D + ["distance"]
     #var_names = ["MIT_Temperature","Surface_Pressure", "MW_Surface_Class", "distance"]
+
+    # this part could be changed by users
+####################################################
     
+    print("Collocate NUCAPS with radiosonde station: "+get_position_name(latlon_radiosonde) )
+    print("start date: "+str(datetime_RS) )
+    print("end   date: "+str(time_end))
+    print("delta t: "+str(dt1)+" min, "+str(dt2)+"min")
+    print("=============================")
+    
+    tt = deepcopy(datetime_RS)
     while tt < time_end:
         
         # get profiles from the closest observation 
-        profile = get_closest_NUCAPS_profile(tt, dt1, dt2, dx, latlon_payerne, var_names=var_names)
+        profile = get_closest_NUCAPS_profile(tt, dt1, dt2, dx, latlon_radiosonde, var_names=var_names, verbose=verbose)
 
         # if variable collocated_profiles already exists 
         
@@ -351,11 +377,14 @@ if __name__ == '__main__':
                 else:    
                     dummy_profile[var].data[:] = np.nan
             dummy_profile.to_netcdf("dummy_profile.nc")
-    
+
+        # close netCDF file
+        profile.close()
+            
         tt += timedelta(hours=12)
 
     #print(collocated_profiles)
-    ncfile_collocated = "NUCAPS_"+get_position_name(latlon_payerne)+"_"+'{:d}'.format(dt1)+"min_"+'{:d}'.format(dt2)+"min_"+'{:d}'.format(dx)+"km.nc"
-    #ncfile_collocated = "test_"+get_position_name(latlon_payerne)+"_"+'{:d}'.format(dt1)+"min_"+'{:d}'.format(dt2)+"min_"+'{:d}'.format(dx)+"km.nc"
+    ncfile_collocated = "NUCAPS_"+get_position_name(latlon_radiosonde)+"_"+'{:d}'.format(dt1)+"min_"+'{:d}'.format(dt2)+"min_"+'{:d}'.format(dx)+"km.nc"
+    #ncfile_collocated = "test_"+get_position_name(latlon_radiosonde)+"_"+'{:d}'.format(dt1)+"min_"+'{:d}'.format(dt2)+"min_"+'{:d}'.format(dx)+"km.nc"
     collocated_profiles.to_netcdf(ncfile_collocated)
     
