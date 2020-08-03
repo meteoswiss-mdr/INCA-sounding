@@ -1,6 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+Created on Fri Jul 31 11:28:02 2020
+
+@author: nal
+"""
+
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
 Created on Thu Jun 11 16:49:11 2020
 
 @author: nal
@@ -232,42 +241,45 @@ def calc_std_temp(input_data_smoothed_INCA, RS_data_smoothed_INCA):
     std_temp_d = pd.DataFrame({'std_temp_d': std_temp_d, 'altitude_m': number_temp.altitude_m})
         
     return std_temp, std_temp_d, number_temp, number_temp_d
-  
-def calc_bias_temp_monthly(firstobj, lastobj, input_smoothed_INCA, RS_data_smoothed): 
-    bias_monthly_temp = pd.DataFrame()
-    while firstobj != lastobj:
-        print(firstobj)
-        firstobj_month = firstobj.month # split into month      
-        RS_temp_month = RS_data_smoothed[RS_data_smoothed.time_YMDHMS.dt.month == firstobj_month]
-        input_temp_month = input_smoothed_INCA[input_smoothed_INCA.time_YMDHMS.dt.month == firstobj_month].sort_values(['time_YMDHMS', 'altitude_m'], ascending=[True, True])
-        
-        diff_temp = np.subtract(input_temp_month.temperature_mean, RS_temp_month.temperature_mean, axis = 1)
-        diff_temp = pd.DataFrame({'diff_temp':diff_temp, 'altitude_m': input_temp_month.altitude_m})
-        diff_temp = diff_temp.astype(float)
-        diff_temp_mean = diff_temp.groupby('altitude_m')['diff_temp'].mean().to_frame(name='mean_all').reset_index()
-        diff_temp_mean = pd.DataFrame({'diff_temp_mean':diff_temp_mean.mean_all, 'altitude_m': diff_temp_mean.altitude_m, 'month': firstobj_month})  
-        bias_monthly_temp = bias_monthly_temp.append(diff_temp_mean)
-        firstobj= firstobj + relativedelta(months=1)
-        
-    return bias_monthly_temp  
 
-def calc_bias_temp_d_monthly(firstobj, lastobj, input_smoothed_INCA, RS_data_smoothed): 
-    bias_monthly_temp_d = pd.DataFrame()
-    while firstobj != lastobj:
-        print(firstobj)
-        firstobj_month = firstobj.month # split into month      
-        RS_temp_month = RS_data_smoothed[RS_data_smoothed.time_YMDHMS.dt.month == firstobj_month]
-        input_temp_month = input_smoothed_INCA[input_smoothed_INCA.time_YMDHMS.dt.month == firstobj_month] #.sort_values(['time_YMDHMS', 'altitude_m'], ascending=[True, True])
-                      
-        diff_temp_d = np.subtract(input_temp_month.temperature_d_mean, RS_temp_month.temperature_d_mean, axis = 1)
-        diff_temp_d = pd.DataFrame({'diff_temp_d':diff_temp_d, 'altitude_m': input_temp_month.altitude_m})
-        diff_temp_d = diff_temp_d.astype(float)
-        diff_temp_d_mean = diff_temp_d.groupby('altitude_m')['diff_temp_d'].mean().to_frame(name='mean_all').reset_index()
-        diff_temp_d_mean = pd.DataFrame({'diff_temp_d_mean':diff_temp_d_mean.mean_all, 'altitude_m': diff_temp_d_mean.altitude_m, 'month': firstobj_month})  
-        bias_monthly_temp_d = bias_monthly_temp_d.append(diff_temp_d_mean)
-        firstobj= firstobj + relativedelta(months=1)
+def subtract_running_window(firstobj, lastobj, NUCAPS_smoothed_INCA_all, NUCAPS_smoothed_INCA_all_time, RS_smoothed_INCA, window_size_days):
+    for i in range(len(NUCAPS_smoothed_INCA_all)):
+        print(i)
+        NUCAPS_smoothed_INCA_all = NUCAPS_smoothed_INCA_all.reset_index(drop=True)
+        lastobj_window = NUCAPS_smoothed_INCA_all_time.time_YMDHMS[i] - timedelta(days=1)
+        firstobj_window = lastobj_window - timedelta(days=window_size_days)
+        altitude_i  =  NUCAPS_smoothed_INCA_all.altitude_m[i]
         
-    return bias_monthly_temp_d
+        NUCAPS_smoothed_INCA_all_window = NUCAPS_smoothed_INCA_all_time[(NUCAPS_smoothed_INCA_all_time.time_YMDHMS.dt.strftime('%m%d%H%M%S') >= firstobj_window.strftime('%m%d%H%M%S')) & (NUCAPS_smoothed_INCA_all_time.time_YMDHMS.dt.strftime('%m%d%H%M%S') <= lastobj_window.strftime('%m%d%H%M%S')) & (NUCAPS_smoothed_INCA_all_time.altitude_m == altitude_i)]
+     
+        RS_smoothed_INCA_window = RS_smoothed_INCA[(RS_smoothed_INCA.time_YMDHMS.dt.strftime('%m%d%H%M%S').isin(NUCAPS_smoothed_INCA_all_window.time_YMDHMS.dt.strftime('%m%d%H%M%S')))& (RS_smoothed_INCA.altitude_m == altitude_i)]
+        NUCAPS_smoothed_INCA_all_window = NUCAPS_smoothed_INCA_all_window[['altitude_m', 'temperature_mean', 'temperature_d_mean']]
+
+       
+        if NUCAPS_smoothed_INCA_all_window.empty: 
+            print('yes')
+            bias_t = 0
+            bias_t_d = 0
+        else:
+                
+            bias_t = np.subtract(NUCAPS_smoothed_INCA_all_window.temperature_mean.reset_index(drop=True), RS_smoothed_INCA_window.temperature_mean.reset_index(drop=True))
+            bias_t = pd.DataFrame({'diff_temp':bias_t.reset_index(drop=True), 'altitude_m':NUCAPS_smoothed_INCA_all_window.altitude_m.reset_index(drop=True)})  
+            bias_t = bias_t.astype(float)
+            bias_t = bias_t.groupby('altitude_m')['diff_temp'].mean().to_frame(name='mean_all').reset_index(drop=True)
+            
+            bias_t_d = np.subtract(NUCAPS_smoothed_INCA_all_window.temperature_d_mean.reset_index(drop=True), RS_smoothed_INCA_window.temperature_d_mean.reset_index(drop=True))
+            bias_t_d = pd.DataFrame({'diff_temp_d':bias_t_d.reset_index(drop=True), 'altitude_m':NUCAPS_smoothed_INCA_all_window.altitude_m.reset_index(drop=True)})  
+            bias_t_d = bias_t_d.astype(float)
+            bias_t_d = bias_t_d.groupby('altitude_m')['diff_temp_d'].mean().to_frame(name='mean_all').reset_index(drop=True)
+            
+            
+            NUCAPS_smoothed_INCA_all.temperature_mean[i] = NUCAPS_smoothed_INCA_all.temperature_mean[i]- float(bias_t.mean_all.values)
+            NUCAPS_smoothed_INCA_all.temperature_d_mean[i] = NUCAPS_smoothed_INCA_all.temperature_d_mean[i] - float(bias_t_d.mean_all.values)    
+            
+    return NUCAPS_smoothed_INCA_all
+
+
+
 ############################################################################# define time #############################################################################
 ### !! time span
 firstdate = '2019050100000'
@@ -300,29 +312,25 @@ while firstobj != lastobj:
     BIAS_archive = '/data/COALITION2/PicturesSatellite/results_NAL/Plots/bias'
     STD_archive = '/data/COALITION2/PicturesSatellite/results_NAL/Plots/std'
     RM_archive = '/data/COALITION2/PicturesSatellite/results_NAL/Radiometer/radiometer_payerne'
-    COSMO_archive = '/data/COALITION2/PicturesSatellite/results_NAL/COSMO/'
     
     ## read data
     RS_data = xr.open_dataset(RS_archive+'/RS_concat.nc').to_dataframe()
     RA_data = xr.open_dataset(RA_archive+'/RA_concat_wp').to_dataframe()
     SMN_data = xr.open_dataset(SMN_archive+'/SMN_concat1.nc').to_dataframe()
     RM_data = xr.open_dataset(RM_archive+'/radiometer_06610_concat_filtered_'+str(DT)+'.nc').to_dataframe()
+    #x = xr.open_dataset('/data/COALITION2/PicturesSatellite/results_NAL/Radiometer/radiometer_payerne/temperature/C00-V859_190501.CMP.TPC.NC')
     NUCAPS_data = open_NUCAPS_file(NUCAPS_archive+'/NUCAPS_Payerne_-120min_60min_3500km.nc')
     # !!!!! find correct  !!!!!
     INCA_grid = pd.read_csv(INCA_archive+'/INCA_grid.csv') 
     # !!!!! find correct  !!!!!
-    COSMO_coordinate = pd.read_csv('/data/COALITION2/PicturesSatellite/results_NAL/COSMO/COSMO_coordindate_payerne.csv')
-    COSMO_data = xr.open_dataset(COSMO_archive+'cosmo1_inca_merge_cut.nc')
-    
-    INCA_grid = pd.read_csv('/data/COALITION2/PicturesSatellite/results_NAL/INCA_grid.csv') 
-    bias_mean_NUCAPS_all_temp = pd.read_csv('/data/COALITION2/PicturesSatellite/results_NAL/NUCAPS/bias_mean_NUCAPS_all_temp.csv') 
-    bias_mean_NUCAPS_all_temp_d = pd.read_csv('/data/COALITION2/PicturesSatellite/results_NAL/NUCAPS/bias_mean_NUCAPS_all_temp_d.csv') 
     
     ####################################################### PREPARE DATASETS: ADD RELEVANT AVARIABLES, DELTE NAN VALUES ########################################################
     ##### A) SMN: Surface measurement
     ##########################################
     # convert time to datetime format
     SMN_data['time_YMDHMS'] = pd.to_datetime(SMN_data.time_YMDHMS, format = '%Y%m%d%H%M%S')
+    
+    SMN_times = SMN_data.time_YMDHMS[SMN_data.precipitation_mm == 0]
     
     ##########################################
     ##### B) RS: Radiosonde
@@ -425,14 +433,18 @@ while firstobj != lastobj:
     dewpoint_degC = cc.dewpoint_from_relative_humidity(RM_data.temperature_degC.values * units.degC, RM_data.relative_humidity_percent.values * units.percent) 
     RM_data.insert(value=dewpoint_degC,column = "dew_point_degC", loc=6)
     #RM_data['dew_point_degC'][RA_data['specific_humidity_gkg-1']== int(10000000)] = np.nan
-    #!!!!! dewpoint from relative humidity okay? #!!!!!
      
     # round datime to 3 min, 5 min...
-    RM_data['time_YMDHMS'] = RM_data.time_YMDHMS_1.dt.round('5min').values
+    RM_data['time_YMDHMS'] = RM_data.time_YMDHMS_1.dt.round('3min').values
+    #RM_data = RM_data[RM_data.rain_flag == 0]
     
+    #RM_data = xr.open_dataset(RM_archive+'/radiometer_06610_concat_filtered_'+str(DT)+'.nc').to_dataframe()
+
     ## convert relative height to geometric height (altitude above mean sea level)
     RM_data.altitude_m = RM_data.altitude_m + 492
 
+    #RM_data = RM_data[RM_data.time_YMDHMS.isin(SMN_times)]
+ 
     ####################################################### FILTER TIME #################################################################################
     ## filter time span
     RS_data_filtered = RS_data[(RS_data['time_YMDHMS'] >= firstobj) & (RS_data['time_YMDHMS'] < lastobj_month)] 
@@ -550,17 +562,33 @@ while firstobj != lastobj:
     RA_smoothed_INCA_mean_temp_d_korr_unc_abs = RA_smoothed_INCA_korr_unc_temp_abs.groupby('altitude_m')['temperature_d_mean'].mean().to_frame(name='mean_all').reset_index()   
     
     # relative filter
-    RA_smoothed_INCA_korr_unc_temp_rel,index_list, index_list_no =  filter_uncertainty_temp(RA_mean_temp_uncertainty, RA_smoothed_INCA_1)                 
-    RA_smoothed_INCA_korr_unc_temp_d_rel,index_list_, index_list_no =  filter_uncertainty_temp_d(RA_mean_temp_d_uncertainty, RA_smoothed_INCA_1)
+    #RA_smoothed_INCA_korr_unc_temp_rel,index_list, index_list_no =  filter_uncertainty_temp(RA_mean_temp_uncertainty, RA_smoothed_INCA_1)                 
+    #RA_smoothed_INCA_korr_unc_temp_d_rel,index_list_, index_list_no =  filter_uncertainty_temp_d(RA_mean_temp_d_uncertainty, RA_smoothed_INCA_1)
     
-    RS_smoothed_RA_korr_unc_rel_temp = interpolate_RS_to_INCA_grid(firstobj, lastobj, INCA_grid, RS_data_filtered, RA_smoothed_INCA_korr_unc_temp_rel)
-    RS_smoothed_RA_korr_unc_rel_temp_d = interpolate_RS_to_INCA_grid(firstobj, lastobj, INCA_grid, RS_data_filtered, RA_smoothed_INCA_korr_unc_temp_d_rel)
-    RS_smoothed_RA_mean_temp_korr_unc_rel = RS_smoothed_RA_korr_unc_rel_temp.groupby('altitude_m')['temperature_mean'].mean().to_frame(name='mean_all').reset_index()
-    RS_smoothed_RA_mean_temp_d_korr_unc_rel = RS_smoothed_RA_korr_unc_rel_temp_d.groupby('altitude_m')['temperature_d_mean'].mean().to_frame(name='mean_all').reset_index()
+    #RS_smoothed_RA_korr_unc_rel_temp = interpolate_RS_to_INCA_grid(firstobj, lastobj, INCA_grid, RS_data_filtered, RA_smoothed_INCA_korr_unc_temp_rel)
+    #RS_smoothed_RA_korr_unc_rel_temp_d = interpolate_RS_to_INCA_grid(firstobj, lastobj, INCA_grid, RS_data_filtered, RA_smoothed_INCA_korr_unc_temp_d_rel)
+    #RS_smoothed_RA_mean_temp_korr_unc_rel = RS_smoothed_RA_korr_unc_rel_temp.groupby('altitude_m')['temperature_mean'].mean().to_frame(name='mean_all').reset_index()
+    #RS_smoothed_RA_mean_temp_d_korr_unc_rel = RS_smoothed_RA_korr_unc_rel_temp_d.groupby('altitude_m')['temperature_d_mean'].mean().to_frame(name='mean_all').reset_index()
 
-    RA_smoothed_INCA_mean_temp_korr_unc_rel = RA_smoothed_INCA_korr_unc_temp_rel.groupby('altitude_m')['temperature_mean'].mean().to_frame(name='mean_all').reset_index()
-    RA_smoothed_INCA_mean_temp_d_korr_unc_rel = RA_smoothed_INCA_korr_unc_temp_d_rel.groupby('altitude_m')['temperature_d_mean'].mean().to_frame(name='mean_all').reset_index()   
+    #RA_smoothed_INCA_mean_temp_korr_unc_rel = RA_smoothed_INCA_korr_unc_temp_rel.groupby('altitude_m')['temperature_mean'].mean().to_frame(name='mean_all').reset_index()
+    #RA_smoothed_INCA_mean_temp_d_korr_unc_rel = RA_smoothed_INCA_korr_unc_temp_d_rel.groupby('altitude_m')['temperature_d_mean'].mean().to_frame(name='mean_all').reset_index()   
     
+    ### bias corrected ###
+    #RA_smoothed_INCA_minbias_0days = subtract_running_window(firstobj, lastobj, RA_smoothed_INCA, RA_smoothed_INCA.reset_index(drop=True), RS_smoothed_RA, window_size_days = int(0))
+    #RA_smoothed_INCA_minbias_0days = RA_smoothed_INCA_minbias_0days[['altitude_m', 'temperature_mean', 'temperature_d_mean']]
+    #RA_smoothed_INCA_minbias_0days = RA_smoothed_INCA_minbias_0days.astype(float)
+    
+    RA_smoothed_INCA_minbias_3days = subtract_running_window(firstobj, lastobj, RA_smoothed_INCA, RA_smoothed_INCA.reset_index(drop=True), RS_smoothed_RA, window_size_days =int(3))
+    RA_smoothed_INCA_minbias_3days = RA_smoothed_INCA_minbias_3days[['altitude_m', 'temperature_mean', 'temperature_d_mean']]
+    RA_smoothed_INCA_minbias_3days = RA_smoothed_INCA_minbias_3days.astype(float)
+    
+    #RA_smoothed_INCA_minbias_7days = subtract_running_window(firstobj, lastobj, RA_smoothed_INCA, RA_smoothed_INCA.reset_index(drop=True), RS_smoothed_RA, window_size_days =int(7))
+    #RA_smoothed_INCA_minbias_7days = RA_smoothed_INCA_minbias_7days[['altitude_m', 'temperature_mean', 'temperature_d_mean']]
+    #RA_smoothed_INCA_minbias_7days = RA_smoothed_INCA_minbias_7days.astype(float)
+    
+    #RA_smoothed_INCA_minbias_30days = subtract_running_window(firstobj, lastobj, RA_smoothed_INCA, RA_smoothed_INCA.reset_index(drop=True), RS_smoothed_RA, window_size_days =int(30))
+    #RA_smoothed_INCA_minbias_30days = RA_smoothed_INCA_minbias_30days[['altitude_m', 'temperature_mean', 'temperature_d_mean']]
+    #RA_smoothed_INCA_minbias_30days = RA_smoothed_INCA_minbias_30days.astype(float)
     
 
 
@@ -581,19 +609,24 @@ while firstobj != lastobj:
     NUCAPS_smoothed_INCA_mean_temp_all = NUCAPS_smoothed_INCA_all.groupby('altitude_m')['temperature_mean'].mean().to_frame(name='mean_all').reset_index()
     NUCAPS_smoothed_INCA_mean_temp_d_all = NUCAPS_smoothed_INCA_all.groupby('altitude_m')['temperature_d_mean'].mean().to_frame(name='mean_all').reset_index()
      
-    # calculate bias
-    bias_monthly_temp_d = calc_bias_temp_d_monthly(firstobj, lastobj, NUCAPS_smoothed_INCA_all_1, RS_smoothed_NUCAPS_all) 
-    bias_monthly_temp = calc_bias_temp_monthly(firstobj, lastobj, NUCAPS_smoothed_INCA_all_1, RS_smoothed_NUCAPS_all) 
+    ### correct bias ###
+    #NUCAPS_smoothed_INCA_all_minbias_0days = subtract_running_window(firstobj, lastobj, NUCAPS_smoothed_INCA_all, NUCAPS_smoothed_INCA_all_1.reset_index(drop=True), RS_smoothed_NUCAPS_all, window_size_days = int(0))
+    #NUCAPS_smoothed_INCA_all_minbias_0days = NUCAPS_smoothed_INCA_all_minbias_0days[['altitude_m', 'temperature_mean', 'temperature_d_mean']]
+    #NUCAPS_smoothed_INCA_all_minbias_0days = NUCAPS_smoothed_INCA_all_minbias_0days.astype(float)
     
-    # remove monthly bias
-    NUCAPS_smoothed_INCA_all_min_bias_run = subtract_running_mean(firstobj, lastobj_month, NUCAPS_smoothed_INCA_all_1, bias_monthly_temp, bias_monthly_temp_d)
-    NUCAPS_smoothed_INCA_all_min_bias_run = NUCAPS_smoothed_INCA_all_min_bias_run[['altitude_m', 'temperature_mean', 'temperature_d_mean']]
-    NUCAPS_smoothed_INCA_all_min_bias_run = NUCAPS_smoothed_INCA_all_min_bias_run.astype(float)
-    NUCAPS_smoothed_INCA_mean_temp_all_min_bias_run = NUCAPS_smoothed_INCA_all_min_bias_run.groupby('altitude_m')['temperature_mean'].mean().to_frame(name='mean_all').reset_index()
-    NUCAPS_smoothed_INCA_mean_temp_d_all_min_bias_run = NUCAPS_smoothed_INCA_all_min_bias_run.groupby('altitude_m')['temperature_d_mean'].mean().to_frame(name='mean_all').reset_index()
+    NUCAPS_smoothed_INCA_all_minbias_3days = subtract_running_window(firstobj, lastobj, NUCAPS_smoothed_INCA_all, NUCAPS_smoothed_INCA_all_1.reset_index(drop=True), RS_smoothed_NUCAPS_all, window_size_days =int(3))
+    NUCAPS_smoothed_INCA_all_minbias_3days = NUCAPS_smoothed_INCA_all_minbias_3days[['altitude_m', 'temperature_mean', 'temperature_d_mean']]
+    NUCAPS_smoothed_INCA_all_minbias_3days = NUCAPS_smoothed_INCA_all_minbias_3days.astype(float)
     
-
-
+    #NUCAPS_smoothed_INCA_all_minbias_7days = subtract_running_window(firstobj, lastobj, NUCAPS_smoothed_INCA_all, NUCAPS_smoothed_INCA_all_1.reset_index(drop=True), RS_smoothed_NUCAPS_all, window_size_days =int(7))
+    #NUCAPS_smoothed_INCA_all_minbias_7days = NUCAPS_smoothed_INCA_all_minbias_7days[['altitude_m', 'temperature_mean', 'temperature_d_mean']]
+    #NUCAPS_smoothed_INCA_all_minbias_7days = NUCAPS_smoothed_INCA_all_minbias_7days.astype(float)
+    
+    #NUCAPS_smoothed_INCA_all_minbias_30days = subtract_running_window(firstobj, lastobj, NUCAPS_smoothed_INCA_all, NUCAPS_smoothed_INCA_all_1.reset_index(drop=True), RS_smoothed_NUCAPS_all, window_size_days =int(1))
+   #3NUCAPS_smoothed_INCA_all_minbias_30days = NUCAPS_smoothed_INCA_all_minbias_30days[['altitude_m', 'temperature_mean', 'temperature_d_mean']]
+    #NUCAPS_smoothed_INCA_all_minbias_30days = NUCAPS_smoothed_INCA_all_minbias_30days.astype(float)
+    
+    ### quality flag ###
     ## times with quality flag 0
     RS_smoothed_NUCAPS_0 = interpolate_RS_to_INCA_grid(firstobj, lastobj_month, INCA_grid, RS_data_filtered, NUCAPS_data_0)
     if RS_smoothed_NUCAPS_0.empty:
@@ -639,6 +672,10 @@ while firstobj != lastobj:
     NUCAPS_smoothed_INCA_mean_temp_9 = NUCAPS_smoothed_INCA_9.groupby('altitude_m')['temperature_mean'].mean().to_frame(name='mean_all').reset_index()
     NUCAPS_smoothed_INCA_mean_temp_d_9 = NUCAPS_smoothed_INCA_9.groupby('altitude_m')['temperature_d_mean'].mean().to_frame(name='mean_all').reset_index()
     
+   
+    
+    
+    
     ##########################################
     ##### E) RM: Radiometer
     ##########################################
@@ -653,23 +690,34 @@ while firstobj != lastobj:
     RM_smoothed_INCA_mean_temp = RM_smoothed_INCA.groupby('altitude_m')['temperature_mean'].mean().to_frame(name='mean_all').reset_index()
     RM_smoothed_INCA_mean_temp_d = RM_smoothed_INCA.groupby('altitude_m')['temperature_d_mean'].mean().to_frame(name='mean_all').reset_index()
     
-   
-    std_temp_RM, std_temp_d_RM, number_temp_RM, number_temp_d_RM = calc_std_temp(RM_smoothed_INCA, RS_smoothed_RM)
+    ### bias corrected ###
+    #RM_smoothed_INCA_minbias_0days = subtract_running_window(firstobj, lastobj, RM_smoothed_INCA, RM_smoothed_INCA.reset_index(drop=True), RS_smoothed_RM, window_size_days = int(0))
+    #RM_smoothed_INCA_minbias_0days = RM_smoothed_INCA_minbias_0days[['altitude_m', 'temperature_mean', 'temperature_d_mean']]
+    #RM_smoothed_INCA_minbias_0days = RM_smoothed_INCA_minbias_0days.astype(float)
+    
+    RM_smoothed_INCA_minbias_3days = subtract_running_window(firstobj, lastobj, RM_smoothed_INCA, RM_smoothed_INCA.reset_index(drop=True), RS_smoothed_RM, window_size_days =int(3))
+    RM_smoothed_INCA_minbias_3days = RM_smoothed_INCA_minbias_3days[['altitude_m', 'temperature_mean', 'temperature_d_mean']]
+    RM_smoothed_INCA_minbias_3days = RM_smoothed_INCA_minbias_3days.astype(float)
+    
+    #RM_smoothed_INCA_minbias_7days = subtract_running_window(firstobj, lastobj, RM_smoothed_INCA, RM_smoothed_INCA.reset_index(drop=True), RS_smoothed_RM, window_size_days =int(7))
+    #RM_smoothed_INCA_minbias_7days = RM_smoothed_INCA_minbias_7days[['altitude_m', 'temperature_mean', 'temperature_d_mean']]
+    #RM_smoothed_INCA_minbias_7days = RM_smoothed_INCA_minbias_7days.astype(float)
+    
+    #RM_smoothed_INCA_minbias_30days = subtract_running_window(firstobj, lastobj, RM_smoothed_INCA, RM_smoothed_INCA.reset_index(drop=True), RS_smoothed_RM, window_size_days =int(30))
+    #RM_smoothed_INCA_minbias_30days = RM_smoothed_INCA_minbias_30days[['altitude_m', 'temperature_mean', 'temperature_d_mean']]
+    #RM_smoothed_INCA_minbias_30days = RM_smoothed_INCA_minbias_30days.astype(float)
+
     ####################################################### CALCULATE BIAS AND STD ############################################################################################## 
     ### BIAS ###
     ##########################################
     ##### C) NUCAPS: Satellite data #####
     ##########################################
-    # bewteen Radiosonde and all NUCAPS
-    diff_temp_mean_NUCAPS_all = calc_bias_temp(NUCAPS_smoothed_INCA_all, RS_smoothed_NUCAPS_all)
-    diff_temp_d_mean_NUCAPS_all = calc_bias_temp_d(NUCAPS_smoothed_INCA_all, RS_smoothed_NUCAPS_all)
-    #diff_temp_mean_NUCAPS_all.to_csv('/data/COALITION2/PicturesSatellite/results_NAL/NUCAPS/bias_mean_NUCAPS_all_temp.csv')
-    #diff_temp_d_mean_NUCAPS_all.to_csv('/data/COALITION2/PicturesSatellite/results_NAL/NUCAPS/bias_mean_NUCAPS_all_temp_d.csv')
+    # original data
+    diff_temp_mean_NUCAPS_all = calc_bias_temp(NUCAPS_smoothed_INCA_all.reset_index(drop=True), RS_smoothed_NUCAPS_all.reset_index(drop=True))
+    diff_temp_d_mean_NUCAPS_all = calc_bias_temp_d(NUCAPS_smoothed_INCA_all.reset_index(drop=True), RS_smoothed_NUCAPS_all.reset_index(drop=True))
 
-    
-    diff_temp_mean_NUCAPS_all_min_bias_run = calc_bias_temp(NUCAPS_smoothed_INCA_all_min_bias_run, RS_smoothed_NUCAPS_all)
-    diff_temp_d_mean_NUCAPS_all_min_bias_run = calc_bias_temp_d(NUCAPS_smoothed_INCA_all_min_bias_run, RS_smoothed_NUCAPS_all)
-       
+    ### quality flags ###
+     
     # bewteen Radiosonde and NUCAPS 0
     diff_temp_mean_NUCAPS_0 = calc_bias_temp(NUCAPS_smoothed_INCA_0, RS_smoothed_NUCAPS_0)
     diff_temp_d_mean_NUCAPS_0 = calc_bias_temp_d(NUCAPS_smoothed_INCA_0, RS_smoothed_NUCAPS_0)
@@ -682,31 +730,69 @@ while firstobj != lastobj:
     diff_temp_mean_NUCAPS_9 = calc_bias_temp(NUCAPS_smoothed_INCA_9, RS_smoothed_NUCAPS_9)
     diff_temp_d_mean_NUCAPS_9 = calc_bias_temp_d(NUCAPS_smoothed_INCA_9, RS_smoothed_NUCAPS_9)
     
+    ### bias corrected ###
+    diff_temp_mean_NUCAPS_all_minbias_0day = calc_bias_temp(NUCAPS_smoothed_INCA_all_minbias_0days, RS_smoothed_NUCAPS_all)
+    diff_temp_d_mean_NUCAPS_all_minbias_0day = calc_bias_temp_d(NUCAPS_smoothed_INCA_all_minbias_0days, RS_smoothed_NUCAPS_all)
     
+    diff_temp_mean_NUCAPS_all_minbias_3day = calc_bias_temp(NUCAPS_smoothed_INCA_all_minbias_3days, RS_smoothed_NUCAPS_all)
+    diff_temp_d_mean_NUCAPS_all_minbias_3day = calc_bias_temp_d(NUCAPS_smoothed_INCA_all_minbias_3days, RS_smoothed_NUCAPS_all)
+
+    diff_temp_mean_NUCAPS_all_minbias_7day = calc_bias_temp(NUCAPS_smoothed_INCA_all_minbias_7days, RS_smoothed_NUCAPS_all)
+    diff_temp_d_mean_NUCAPS_all_minbias_7day = calc_bias_temp_d(NUCAPS_smoothed_INCA_all_minbias_7days, RS_smoothed_NUCAPS_all)
+    
+    diff_temp_mean_NUCAPS_all_minbias_30day = calc_bias_temp(NUCAPS_smoothed_INCA_all_minbias_30days, RS_smoothed_NUCAPS_all)
+    diff_temp_d_mean_NUCAPS_all_minbias_30day = calc_bias_temp_d(NUCAPS_smoothed_INCA_all_minbias_30days, RS_smoothed_NUCAPS_all)
+
 
     ##########################################
     ##### D) RALMO: Raman lidar 
     #########################################
     # between Radiosonde and RALMO 
-    diff_temp_mean_RA = calc_bias_temp(RA_smoothed_INCA, RS_smoothed_RA)   
-    diff_temp_d_mean_RA = calc_bias_temp_d(RA_smoothed_INCA, RS_smoothed_RA)
+    diff_temp_mean_RA = calc_bias_temp(RA_smoothed_INCA.reset_index(drop=True), RS_smoothed_RA.reset_index(drop=True))   
+    diff_temp_d_mean_RA = calc_bias_temp_d(RA_smoothed_INCA.reset_index(drop=True), RS_smoothed_RA.reset_index(drop=True))
     
     diff_temp_mean_RA_korr_unc_abs = calc_bias_temp(RA_smoothed_INCA_korr_unc_temp_abs, RS_smoothed_RA_korr_unc_abs_temp)   
     diff_temp_d_mean_RA_korr_unc_abs = calc_bias_temp_d( RA_smoothed_INCA_korr_unc_temp_abs, RS_smoothed_RA_korr_unc_abs_temp)
     
-    diff_temp_mean_RA_korr_unc_rel = calc_bias_temp(RA_smoothed_INCA_korr_unc_temp_rel, RS_smoothed_RA_korr_unc_rel_temp)   
-    diff_temp_d_mean_RA_korr_unc_rel = calc_bias_temp_d( RA_smoothed_INCA_korr_unc_temp_d_rel, RS_smoothed_RA_korr_unc_rel_temp_d)
+    #diff_temp_mean_RA_korr_unc_rel = calc_bias_temp(RA_smoothed_INCA_korr_unc_temp_rel, RS_smoothed_RA_korr_unc_rel_temp)   
+    #diff_temp_d_mean_RA_korr_unc_rel = calc_bias_temp_d( RA_smoothed_INCA_korr_unc_temp_d_rel, RS_smoothed_RA_korr_unc_rel_temp_d)
     
+    ### bias corrected ###
+    diff_temp_mean_RA_minbias_0day = calc_bias_temp(RA_smoothed_INCA_minbias_0days, RS_smoothed_RA)
+    diff_temp_d_mean_RA_minbias_0day = calc_bias_temp_d(RA_smoothed_INCA_minbias_0days, RS_smoothed_RA)
     
+    diff_temp_mean_RA_minbias_3day = calc_bias_temp(RA_smoothed_INCA_minbias_3days, RS_smoothed_RA)
+    diff_temp_d_mean_RA_minbias_3day = calc_bias_temp_d(RA_smoothed_INCA_minbias_3days, RS_smoothed_RA)
+
+    diff_temp_mean_RA_minbias_7day = calc_bias_temp(RA_smoothed_INCA_minbias_7days, RS_smoothed_RA)
+    diff_temp_d_mean_RA_minbias_7day = calc_bias_temp_d(RA_smoothed_INCA_minbias_7days, RS_smoothed_RA)
+    
+    diff_temp_mean_RA_minbias_30day = calc_bias_temp(RA_smoothed_INCA_minbias_30days, RS_smoothed_RA)
+    diff_temp_d_mean_RA_minbias_30day = calc_bias_temp_d(RA_smoothed_INCA_minbias_30days, RS_smoothed_RA)
+
+
      
     
     ##########################################
     ## E) RM: Radiometer 
     ##########################################
-    diff_temp_mean_RM = calc_bias_temp(RM_smoothed_INCA, RS_smoothed_RM)   
-    diff_temp_d_mean_RM = calc_bias_temp_d(RM_smoothed_INCA, RS_smoothed_RM)
+    diff_temp_mean_RM = calc_bias_temp(RM_smoothed_INCA.reset_index(drop=True), RS_smoothed_RM.reset_index(drop=True))   
+    diff_temp_d_mean_RM = calc_bias_temp_d(RM_smoothed_INCA.reset_index(drop=True), RS_smoothed_RM.reset_index(drop=True))
     
- 
+    ### bias corrected ###
+    ### bias corrected ###
+    diff_temp_mean_RM_minbias_0day = calc_bias_temp(RM_smoothed_INCA_minbias_0days, RS_smoothed_RM)
+    diff_temp_d_mean_RM_minbias_0day = calc_bias_temp_d(RM_smoothed_INCA_minbias_0days, RS_smoothed_RM)
+    
+    diff_temp_mean_RM_minbias_3day = calc_bias_temp(RM_smoothed_INCA_minbias_3days, RS_smoothed_RM)
+    diff_temp_d_mean_RM_minbias_3day = calc_bias_temp_d(RM_smoothed_INCA_minbias_3days, RS_smoothed_RM)
+
+    diff_temp_mean_RM_minbias_7day = calc_bias_temp(RM_smoothed_INCA_minbias_7days, RS_smoothed_RM)
+    diff_temp_d_mean_RM_minbias_7day = calc_bias_temp_d(RM_smoothed_INCA_minbias_7days, RS_smoothed_RM)
+    
+    diff_temp_mean_RM_minbias_30day = calc_bias_temp(RM_smoothed_INCA_minbias_30days, RS_smoothed_RM)
+    diff_temp_d_mean_RM_minbias_30day = calc_bias_temp_d(RM_smoothed_INCA_minbias_30days, RS_smoothed_RM)
+
     
     
     
@@ -715,11 +801,10 @@ while firstobj != lastobj:
     ##### C) NUCAPS: Satellite data #####
     ##########################################  
     # bewteen Radiosonde and all NUCAPS
-    std_temp_NUCAPS_all, std_temp_d_NUCAPS_all, number_temp_NUCAPS_all, number_temp_d_NUCAPS_all = calc_std_temp(NUCAPS_smoothed_INCA_all, RS_smoothed_NUCAPS_all)
+    std_temp_NUCAPS_all, std_temp_d_NUCAPS_all, number_temp_NUCAPS_all, number_temp_d_NUCAPS_all = calc_std_temp(NUCAPS_smoothed_INCA_all.reset_index(drop=True), RS_smoothed_NUCAPS_all)
 
+    ### quality flag ###
     # minus running bias
-    std_temp_NUCAPS_all_min_bias_run, std_temp_d_NUCAPS_all_min_bias_run, number_temp_NUCAPS_all_minbias_run, number_temp_d_NUCAPS_all_min_bias_run = calc_std_temp(NUCAPS_smoothed_INCA_all_min_bias_run, RS_smoothed_NUCAPS_all)
-
     # bewteen Radiosonde and NUCAPS 0
     std_temp_NUCAPS_0, std_temp_d_NUCAPS_0, number_temp_NUCAPS_0, number_temp_d_NUCAPS_0, = calc_std_temp(NUCAPS_smoothed_INCA_0, RS_smoothed_NUCAPS_0)
     
@@ -729,27 +814,49 @@ while firstobj != lastobj:
     # bewteen Radiosonde and NUCAPS 9
     std_temp_NUCAPS_9, std_temp_d_NUCAPS_9, number_temp_NUCAPS_9, number_temp_d_NUCAPS_9, = calc_std_temp(NUCAPS_smoothed_INCA_9, RS_smoothed_NUCAPS_9)
     
+    ### bias corrected ###
+    std_temp_NUCAPS_all_minbias_0days, std_temp_d_NUCAPS_all_minbias_0days, number_temp_NUCAPS_all_minbias_0days, number_temp_d_NUCAPS_all_minbias_0days = calc_std_temp(NUCAPS_smoothed_INCA_all_minbias_0days, RS_smoothed_NUCAPS_all)
+    
+    std_temp_NUCAPS_all_minbias_3days, std_temp_d_NUCAPS_all_minbias_3days, number_temp_NUCAPS_all_minbias_3days, number_temp_d_NUCAPS_all_minbias_3days = calc_std_temp(NUCAPS_smoothed_INCA_all_minbias_3days, RS_smoothed_NUCAPS_all)
+    
+    std_temp_NUCAPS_all_minbias_7days, std_temp_d_NUCAPS_all_minbias_7days, number_temp_NUCAPS_all_minbias_7days, number_temp_d_NUCAPS_all_minbias_7days = calc_std_temp(NUCAPS_smoothed_INCA_all_minbias_7days, RS_smoothed_NUCAPS_all)
+    
+    std_temp_NUCAPS_all_minbias_30days, std_temp_d_NUCAPS_all_minbias_30days, number_temp_NUCAPS_all_minbias_30days, number_temp_d_NUCAPS_all_minbias_30days = calc_std_temp(NUCAPS_smoothed_INCA_all_minbias_30days, RS_smoothed_NUCAPS_all)
+    
+
     ##########################################
     ##### D) RALMO: Raman lidar 
     #########################################
-    std_temp_RA, std_temp_d_RA, number_temp_RA, number_temp_d_RA = calc_std_temp(RA_smoothed_INCA, RS_smoothed_RA)
+    std_temp_RA, std_temp_d_RA, number_temp_RA, number_temp_d_RA = calc_std_temp(RA_smoothed_INCA.reset_index(drop=True), RS_smoothed_RA)
     
     std_temp_RA_korr_unc_abs, std_temp_d_RA_korr_unc_abs, number_temp_RA_korr_unc_abs, number_temp_d_RA_korr_unc_abs = calc_std_temp(RA_smoothed_INCA_korr_unc_temp_abs, RS_smoothed_RA_korr_unc_abs_temp)
     
-    std_temp_RA_korr_unc_rel, std_temp_d_RA_korr_unc_rel, number_temp_RA_korr_unc_rel, number_temp_d_RA_korr_unc_rel = calc_std_temp(RA_smoothed_INCA_korr_unc_temp_rel, RS_smoothed_RA_korr_unc_rel_temp)
+    #std_temp_RA_korr_unc_rel, std_temp_d_RA_korr_unc_rel, number_temp_RA_korr_unc_rel, number_temp_d_RA_korr_unc_rel = calc_std_temp(RA_smoothed_INCA_korr_unc_temp_rel, RS_smoothed_RA_korr_unc_rel_temp)
   
+    ### bias corrected ###
+    std_temp_RA_minbias_0days, std_temp_d_RA_minbias_0days, number_temp_RA_minbias_0days, number_temp_d_RA_minbias_0days = calc_std_temp(RA_smoothed_INCA_minbias_0days, RS_smoothed_RA)
+    
+    std_temp_RA_minbias_3days, std_temp_d_RA_minbias_3days, number_temp_RA_minbias_3days, number_temp_d_RA_minbias_3days = calc_std_temp(RA_smoothed_INCA_minbias_3days, RS_smoothed_RA)
+    
+    std_temp_RA_minbias_7days, std_temp_d_RA_minbias_7days, number_temp_RA_minbias_7days, number_temp_d_RA_minbias_7days = calc_std_temp(RA_smoothed_INCA_minbias_7days, RS_smoothed_RA)
+    
+    std_temp_RA_minbias_30days, std_temp_d_RA_minbias_30days, number_temp_RA_minbias_30days, number_temp_d_RA_minbias_30days = calc_std_temp(RA_smoothed_INCA_minbias_30days, RS_smoothed_RA)
     
     ##########################################
     ## E) RM: Radiometer 
     ##########################################
-    std_temp_RM, std_temp_d_RM, number_temp_RM, number_temp_d_RM = calc_std_temp(RM_smoothed_INCA, RS_smoothed_RM)
+    std_temp_RM, std_temp_d_RM, number_temp_RM, number_temp_d_RM = calc_std_temp(RM_smoothed_INCA.reset_index(drop=True), RS_smoothed_RM)
     
+    ### bias corrected ###
+    std_temp_RM_minbias_0days, std_temp_d_RM_minbias_0days, number_temp_RM_minbias_0days, number_temp_d_RM_minbias_0days = calc_std_temp(RM_smoothed_INCA_minbias_0days, RS_smoothed_RM)
     
+    std_temp_RM_minbias_3days, std_temp_d_RM_minbias_3days, number_temp_RM_minbias_3days, number_temp_d_RM_minbias_3days = calc_std_temp(RM_smoothed_INCA_minbias_3days, RS_smoothed_RM)
+    
+    std_temp_RM_minbias_7days, std_temp_d_RM_minbias_7days, number_temp_RM_minbias_7days, number_temp_d_RM_minbias_7days = calc_std_temp(RM_smoothed_INCA_minbias_7days, RS_smoothed_RM)
+    
+    std_temp_RM_minbias_30days, std_temp_d_RM_minbias_30days, number_temp_RM_minbias_30days, number_temp_d_RM_minbias_30days = calc_std_temp(RM_smoothed_INCA_minbias_30days, RS_smoothed_RM)
     
 
-    # SMN
-    NUCAPS1_smoothed_INCA_mean_temp_all = NUCAPS_smoothed_INCA_mean_temp_all
-    NUCAPS1_smoothed_INCA_mean_temp_d_all = NUCAPS_smoothed_INCA_mean_temp_d_all
 
 
     ###################################################### PLOT MEAN PROFILE, BIAS AND STD ###################################################################################### 
@@ -816,8 +923,8 @@ while firstobj != lastobj:
     ax.plot(RA_smoothed_INCA_mean_temp_korr_unc_abs.mean_all, RA_smoothed_INCA_mean_temp_korr_unc_abs.altitude_m, color = 'orangered',linewidth = 2,  label = 'RA T abs unc', zorder = 1)
     ax.plot(RA_smoothed_INCA_mean_temp_d_korr_unc_abs.mean_all, RA_smoothed_INCA_mean_temp_d_korr_unc_abs.altitude_m, color = 'orangered',linewidth = 2,  label = 'RA Td abs unc', zorder = 1)
     
-    ax.plot(RA_smoothed_INCA_mean_temp_korr_unc_rel.mean_all, RA_smoothed_INCA_mean_temp_korr_unc_rel.altitude_m, color = 'magenta',linewidth = 2,  label = 'RA T rel unc', zorder = 1)
-    ax.plot(RA_smoothed_INCA_mean_temp_d_korr_unc_rel.mean_all, RA_smoothed_INCA_mean_temp_d_korr_unc_rel.altitude_m, color = 'magenta',linewidth = 2,  label = 'RA T rel unc', zorder = 1)
+    #ax.plot(RA_smoothed_INCA_mean_temp_korr_unc_rel.mean_all, RA_smoothed_INCA_mean_temp_korr_unc_rel.altitude_m, color = 'magenta',linewidth = 2,  label = 'RA T rel unc', zorder = 1)
+    #ax.plot(RA_smoothed_INCA_mean_temp_d_korr_unc_rel.mean_all, RA_smoothed_INCA_mean_temp_d_korr_unc_rel.altitude_m, color = 'magenta',linewidth = 2,  label = 'RA T rel unc', zorder = 1)
     
     #ax.plot(RA_mean_temp_uncertainty.mean_all, RA_mean_temp_uncertainty.altitude_m, color = 'green',linewidth = 2,  label = 'RA T uncertainty', zorder = 1)
     #ax.plot(RA_mean_temp_d_uncertainty.mean_all, RA_mean_temp_d_uncertainty.altitude_m, color = 'magenta',linewidth = 2,  label = 'RA Td smoothed RA', zorder = 1)
@@ -875,9 +982,9 @@ while firstobj != lastobj:
     ax1.tick_params(labelsize = 30)
     ax1.set_title('Bias', fontsize = 30)
     ax1.set_ylim(0, 13000)
-    ax1.set_xlim(-2, 2)
+    #ax1.set_xlim(-2, 2)
     ax1.set_yticks(np.arange(0,13000, 1000))
-    ax1.set_xticks(np.arange(-2, 2, 1))
+    #ax1.set_xticks(np.arange(-2, 2, 1))
     ax1.axvspan(-2, -1, alpha=0.5, color='grey', zorder = 0)
     ax1.axvspan(1, 2, alpha=0.5, color='grey', zorder = 0)
     ax1.axvspan(-1, 1, alpha=0.5, color='lightgrey', zorder = 0)
@@ -904,12 +1011,10 @@ while firstobj != lastobj:
     ##### C) NUCAPS: Satellite data - GREENISH
     ########################################## 
     # all
-    #ax1.plot(diff_temp_mean_NUCAPS_all.diff_temp, diff_temp_mean_NUCAPS_all.altitude_m, color = 'darkslategrey', linewidth = 6, label = 'T NUCAPS all', zorder = 0)
-    #ax1.plot(diff_temp_d_mean_NUCAPS_all.diff_temp_d_mean, diff_temp_d_mean_NUCAPS_all.altitude_m, color = 'darkslategrey', linewidth = 6, label = 'Td NUCAPS all', linestyle = '--', zorder = 1)
+    ax1.plot(diff_temp_mean_NUCAPS_all.diff_temp, diff_temp_mean_NUCAPS_all.altitude_m, color = 'darkslategrey', linewidth = 6, label = 'T NUCAPS all', zorder = 0)
+    ax1.plot(diff_temp_d_mean_NUCAPS_all.diff_temp_d_mean, diff_temp_d_mean_NUCAPS_all.altitude_m, color = 'darkslategrey', linewidth = 6, label = 'Td NUCAPS all', linestyle = '--', zorder = 1)
      
-    #ax1.plot(diff_temp_mean_NUCAPS_all_min_bias_run.diff_temp, diff_temp_mean_NUCAPS_all_min_bias_run.altitude_m, color = 'forestgreen', linewidth = 3, label = 'T NUCAPS all min running bias', zorder = 0)
-    #ax1.plot(diff_temp_d_mean_NUCAPS_all_min_bias_run.diff_temp_d_mean, diff_temp_d_mean_NUCAPS_all_min_bias_run.altitude_m, color = 'forestgreen', linewidth = 3, label = 'Td NUCAPS all min running bias', linestyle = '--', zorder = 1)
-    
+    ### quality flag ###    
     # times with quality flag 0
     #ax1.plot(diff_temp_mean_NUCAPS_0.diff_temp, diff_temp_mean_NUCAPS_0.altitude_m, color = 'green', linewidth = 3, label = 'T NUCAPS 0', zorder = 0)
     #ax1.plot(diff_temp_d_mean_NUCAPS_0.diff_temp_d_mean, diff_temp_d_mean_NUCAPS_0.altitude_m, color = 'green', linewidth = 3, label = 'Td NUCAPS 0', linestyle = '--', zorder = 1)
@@ -922,14 +1027,25 @@ while firstobj != lastobj:
     #ax1.plot(diff_temp_mean_NUCAPS_9.diff_temp, diff_temp_mean_NUCAPS_9.altitude_m, color = 'lightgreen', linewidth = 2, label = 'T NUCAPS 9', zorder = 0)
     #ax1.plot(diff_temp_d_mean_NUCAPS_9.diff_temp_d_mean, diff_temp_d_mean_NUCAPS_9.altitude_m, color = 'lightgreen', linewidth = 2, label = 'Td NUCAPS 9', linestyle = '--', zorder = 1)
     
+    ### bias corrected ###
+    ax1.plot(diff_temp_mean_NUCAPS_all_minbias_0day.diff_temp, diff_temp_mean_NUCAPS_all_minbias_0day.altitude_m, color = 'red', linewidth = 3, label = 'NUCAPS T, min bias 0 days', zorder = 0)
+    ax1.plot(diff_temp_d_mean_NUCAPS_all_minbias_0day.diff_temp_d_mean, diff_temp_mean_NUCAPS_all_minbias_0day.altitude_m, color = 'red', linewidth = 3, label = 'NUCAPS Td, min bias 0 days', linestyle = '--', zorder = 1)
+    
+    ax1.plot(diff_temp_mean_NUCAPS_all_minbias_3day.diff_temp, diff_temp_mean_NUCAPS_all_minbias_3day.altitude_m, color = 'green', linewidth = 3, label = 'NUCAPS T, min bias 3 days', zorder = 0)
+    ax1.plot(diff_temp_d_mean_NUCAPS_all_minbias_3day.diff_temp_d_mean, diff_temp_mean_NUCAPS_all_minbias_3day.altitude_m, color = 'green', linewidth = 3, label = 'NUCAPS Td, min bias 3 days', linestyle = '--', zorder = 1)
+
+    ax1.plot(diff_temp_mean_NUCAPS_all_minbias_7day.diff_temp, diff_temp_mean_NUCAPS_all_minbias_7day.altitude_m, color = 'orange', linewidth = 3, label = 'NUCAPS T, min bias 7 days', zorder = 0)
+    ax1.plot(diff_temp_d_mean_NUCAPS_all_minbias_7day.diff_temp_d_mean, diff_temp_mean_NUCAPS_all_minbias_7day.altitude_m, color = 'orange', linewidth = 3, label = 'NUCAPS Td, min bias 7 days', linestyle = '--', zorder = 1)
+
+    ax1.plot(diff_temp_mean_NUCAPS_all_minbias_30day.diff_temp, diff_temp_mean_NUCAPS_all_minbias_30day.altitude_m, color = 'navy', linewidth = 3, label = 'NUCAPS T, min bias 30 days', zorder = 0)
+    ax1.plot(diff_temp_d_mean_NUCAPS_all_minbias_30day.diff_temp_d_mean, diff_temp_mean_NUCAPS_all_minbias_30day.altitude_m, color = 'navy', linewidth = 3, label = 'NUCAPS Td, min bias 30 days', linestyle = '--', zorder = 1)
+
     #####
     # all
     #ax2.plot(number_temp_NUCAPS_all.number, number_temp_NUCAPS_all.altitude_m, color = 'darkslategrey', linewidth = 6 , zorder = 0)
     #ax2.plot(number_temp_d_NUCAPS_all.number, number_temp_NUCAPS_all.altitude_m, color = 'darkslategrey', linewidth = 6, linestyle = '--', zorder = 1)
     
-    #ax2.plot(number_temp_NUCAPS_all_minbias_run.number, number_temp_NUCAPS_all_minbias_run.altitude_m, color = 'lawngreen', linewidth = 3,  zorder = 0)
-    #ax2.plot(number_temp_d_NUCAPS_all_min_bias_run.number, number_temp_d_NUCAPS_all_min_bias_run.altitude_m, color = 'lawngreen', linewidth = 3, linestyle = '--', zorder = 1)
-    
+    ### quality flag ###    
     # times with quality flag 0
     #ax2.plot(number_temp_NUCAPS_0.number, number_temp_NUCAPS_0.altitude_m, color = 'green', linewidth = 2,  zorder = 0)
     #ax2.plot(number_temp_d_NUCAPS_0.number, number_temp_NUCAPS_0.altitude_m, color = 'green', linewidth = 2, linestyle = '--', zorder = 1)
@@ -941,6 +1057,20 @@ while firstobj != lastobj:
     # times with quality flag 9
     #ax2.plot(number_temp_NUCAPS_9.number, number_temp_NUCAPS_9.altitude_m, color = 'lightgreen', linewidth = 2,  zorder = 0)
     #ax2.plot(number_temp_d_NUCAPS_9.number, number_temp_NUCAPS_9.altitude_m, color = 'lightgreen', linewidth = 2, linestyle = '--', zorder = 1)
+    
+    ### bias corrected ###
+    ax2.plot(number_temp_NUCAPS_all_minbias_0days.number, number_temp_NUCAPS_all_minbias_0days.altitude_m, color = 'red', linewidth = 3 , zorder = 0)
+    ax2.plot(number_temp_d_NUCAPS_all_minbias_0days.number, number_temp_NUCAPS_all_minbias_0days.altitude_m, color = 'red', linewidth =3, linestyle = '--', zorder = 1)
+    
+    ax2.plot(number_temp_NUCAPS_all_minbias_3days.number, number_temp_NUCAPS_all_minbias_3days.altitude_m, color = 'green', linewidth = 3 , zorder = 0)
+    ax2.plot(number_temp_d_NUCAPS_all_minbias_3days.number, number_temp_NUCAPS_all_minbias_3days.altitude_m, color = 'green', linewidth =3, linestyle = '--', zorder = 1)
+
+    ax2.plot(number_temp_NUCAPS_all_minbias_7days.number, number_temp_NUCAPS_all_minbias_7days.altitude_m, color = 'green', linewidth = 3 , zorder = 0)
+    ax2.plot(number_temp_d_NUCAPS_all_minbias_7days.number, number_temp_NUCAPS_all_minbias_7days.altitude_m, color = 'green', linewidth =3, linestyle = '--', zorder = 1)
+
+    ax2.plot(number_temp_NUCAPS_all_minbias_30days.number, number_temp_NUCAPS_all_minbias_30days.altitude_m, color = 'navy', linewidth = 3 , zorder = 0)
+    ax2.plot(number_temp_d_NUCAPS_all_minbias_30days.number, number_temp_NUCAPS_all_minbias_30days.altitude_m, color = 'navy', linewidth =3, linestyle = '--', zorder = 1)
+
     
     ##########################################
     ##### D) RALMO: Raman lidar - REDISH
@@ -958,6 +1088,19 @@ while firstobj != lastobj:
     #ax1.plot(RA_mean_temp_uncertainty.mean_all, RA_mean_temp_uncertainty.altitude_m, color = 'magenta', linewidth = 2, label = 'T uncertainty', zorder = 0)
     #ax1.plot(np.abs(RA_mean_temp_d_uncertainty.mean_all), RA_mean_temp_d_uncertainty.altitude_m, color = 'aqua', linewidth = 2, label = 'Td uncertainty', zorder = 1)
     
+    ### bias corrected ###
+    ax1.plot(diff_temp_mean_RA_minbias_0day.diff_temp, diff_temp_mean_RA_minbias_0day.altitude_m, color = 'red', linewidth = 3, label = 'RA T, min bias 0 days', zorder = 0)
+    ax1.plot(diff_temp_d_mean_RA_minbias_0day.diff_temp_d_mean, diff_temp_mean_RA_minbias_0day.altitude_m, color = 'red', linewidth = 3, label = 'RA Td, min bias 0 days', linestyle = '--', zorder = 1)
+    
+    ax1.plot(diff_temp_mean_RA_minbias_3day.diff_temp, diff_temp_mean_RA_minbias_3day.altitude_m, color = 'green', linewidth = 3, label = 'RA T, min bias 3 days', zorder = 0)
+    ax1.plot(diff_temp_d_mean_RA_minbias_3day.diff_temp_d_mean, diff_temp_mean_RA_minbias_3day.altitude_m, color = 'green', linewidth = 3, label = 'RA Td, min bias 3 days', linestyle = '--', zorder = 1)
+
+    ax1.plot(diff_temp_mean_RA_minbias_7day.diff_temp, diff_temp_mean_RA_minbias_7day.altitude_m, color = 'orange', linewidth = 3, label = 'RA T, min bias 7 days', zorder = 0)
+    ax1.plot(diff_temp_d_mean_RA_minbias_7day.diff_temp_d_mean, diff_temp_mean_RA_minbias_7day.altitude_m, color = 'orange', linewidth = 3, label = 'RA Td, min bias 7 days', linestyle = '--', zorder = 1)
+
+    ax1.plot(diff_temp_mean_RA_minbias_30day.diff_temp, diff_temp_mean_RA_minbias_30day.altitude_m, color = 'navy', linewidth = 3, label = 'RA T, min bias 30 days', zorder = 0)
+    ax1.plot(diff_temp_d_mean_RA_minbias_30day.diff_temp_d_mean, diff_temp_mean_RA_minbias_30day.altitude_m, color = 'navy', linewidth = 3, label = 'RA Td, min bias 30 days', linestyle = '--', zorder = 1)
+
     #####
     #ax2.plot(number_temp_RA.number, number_temp_RA.altitude_m, color = 'maroon', linewidth = 3, zorder = 0)
     #ax2.plot(number_temp_d_RA.number, number_temp_d_RA.altitude_m, color = 'maroon', linewidth = 3,   zorder = 1)
@@ -968,15 +1111,53 @@ while firstobj != lastobj:
     #ax2.plot(number_temp_RA_korr_unc_rel.number, number_temp_RA_korr_unc_rel.altitude_m, color = 'magenta', linewidth = 3,  zorder = 0)
     #ax2.plot(number_temp_d_RA_korr_unc_rel.number, number_temp_d_RA_korr_unc_rel.altitude_m, color = 'magenta', linewidth = 3, linestyle = '--', zorder = 1)
     
+    ### bias corrected ###
+    ax2.plot(number_temp_RA_minbias_0days.number, number_temp_RA_minbias_0days.altitude_m, color = 'red', linewidth = 3 , zorder = 0)
+    ax2.plot(number_temp_d_RA_minbias_0days.number, number_temp_RA_minbias_0days.altitude_m, color = 'red', linewidth =3, linestyle = '--', zorder = 1)
+    
+    ax2.plot(number_temp_RA_minbias_3days.number, number_temp_RA_minbias_3days.altitude_m, color = 'green', linewidth = 3 , zorder = 0)
+    ax2.plot(number_temp_d_RA_minbias_3days.number, number_temp_RA_minbias_3days.altitude_m, color = 'green', linewidth =3, linestyle = '--', zorder = 1)
+
+    ax2.plot(number_temp_RA_minbias_7days.number, number_temp_RA_minbias_7days.altitude_m, color = 'green', linewidth = 3 , zorder = 0)
+    ax2.plot(number_temp_d_RA_minbias_7days.number, number_temp_RA_minbias_7days.altitude_m, color = 'green', linewidth =3, linestyle = '--', zorder = 1)
+
+    ax2.plot(number_temp_RA_minbias_30days.number, number_temp_RA_minbias_30days.altitude_m, color = 'navy', linewidth = 3 , zorder = 0)
+    ax2.plot(number_temp_d_RA_minbias_30days.number, number_temp_RA_minbias_30days.altitude_m, color = 'navy', linewidth =3, linestyle = '--', zorder = 1)
     ##########################################
     ## E) RM: Radiometer  - BLACKISH
     ##########################################
     ax1.plot(diff_temp_mean_RM.diff_temp, diff_temp_mean_RM.altitude_m, color = 'navy', linewidth = 3, label = 'T RM', zorder = 0)
     ax1.plot(diff_temp_d_mean_RM.diff_temp_d_mean, diff_temp_d_mean_RM.altitude_m, color = 'navy', linewidth = 3, linestyle = '--',label = 'Td RM', zorder = 1)
-     
+    
+    ### bias corrected ###
+    ax1.plot(diff_temp_mean_RM_minbias_0day.diff_temp, diff_temp_mean_RM_minbias_0day.altitude_m, color = 'red', linewidth = 3, label = 'RM T, min bias 0 days', zorder = 0)
+    ax1.plot(diff_temp_d_mean_RM_minbias_0day.diff_temp_d_mean, diff_temp_mean_RM_minbias_0day.altitude_m, color = 'red', linewidth = 3, label = 'RM Td, min bias 0 days', linestyle = '--', zorder = 1)
+    
+    ax1.plot(diff_temp_mean_RM_minbias_3day.diff_temp, diff_temp_mean_RM_minbias_3day.altitude_m, color = 'green', linewidth = 3, label = 'RM T, min bias 3 days', zorder = 0)
+    ax1.plot(diff_temp_d_mean_RM_minbias_3day.diff_temp_d_mean, diff_temp_mean_RM_minbias_3day.altitude_m, color = 'green', linewidth = 3, label = 'RM Td, min bias 3 days', linestyle = '--', zorder = 1)
+
+    ax1.plot(diff_temp_mean_RM_minbias_7day.diff_temp, diff_temp_mean_RM_minbias_7day.altitude_m, color = 'orange', linewidth = 3, label = 'RM T, min bias 7 days', zorder = 0)
+    ax1.plot(diff_temp_d_mean_RM_minbias_7day.diff_temp_d_mean, diff_temp_mean_RM_minbias_7day.altitude_m, color = 'orange', linewidth = 3, label = 'RM Td, min bias 7 days', linestyle = '--', zorder = 1)
+
+    ax1.plot(diff_temp_mean_RM_minbias_30day.diff_temp, diff_temp_mean_RM_minbias_30day.altitude_m, color = 'navy', linewidth = 3, label = 'RM T, min bias 30 days', zorder = 0)
+    ax1.plot(diff_temp_d_mean_RM_minbias_30day.diff_temp_d_mean, diff_temp_mean_RM_minbias_30day.altitude_m, color = 'navy', linewidth = 3, label = 'RM Td, min bias 30 days', linestyle = '--', zorder = 1)
+
     #####
     ax2.plot(number_temp_RM.number, number_temp_RM.altitude_m, color = 'navy', linewidth = 2,  zorder = 0)
     ax2.plot(number_temp_d_RM.number, number_temp_RM.altitude_m, color = 'navy', linewidth = 2, linestyle = 'dotted', zorder = 1)
+    
+    ### bias corrected ###
+    ax2.plot(number_temp_RM_minbias_0days.number, number_temp_RM_minbias_0days.altitude_m, color = 'red', linewidth = 3 , zorder = 0)
+    ax2.plot(number_temp_d_RM_minbias_0days.number, number_temp_RM_minbias_0days.altitude_m, color = 'red', linewidth =3, linestyle = '--', zorder = 1)
+    
+    ax2.plot(number_temp_RM_minbias_3days.number, number_temp_RM_minbias_3days.altitude_m, color = 'green', linewidth = 3 , zorder = 0)
+    ax2.plot(number_temp_d_RM_minbias_3days.number, number_temp_RM_minbias_3days.altitude_m, color = 'green', linewidth =3, linestyle = '--', zorder = 1)
+
+    ax2.plot(number_temp_RM_minbias_7days.number, number_temp_RM_minbias_7days.altitude_m, color = 'green', linewidth = 3 , zorder = 0)
+    ax2.plot(number_temp_d_RM_minbias_7days.number, number_temp_RM_minbias_7days.altitude_m, color = 'green', linewidth =3, linestyle = '--', zorder = 1)
+
+    ax2.plot(number_temp_RM_minbias_30days.number, number_temp_RM_minbias_30days.altitude_m, color = 'navy', linewidth = 3 , zorder = 0)
+    ax2.plot(number_temp_d_RM_minbias_30days.number, number_temp_RM_minbias_30days.altitude_m, color = 'navy', linewidth =3, linestyle = '--', zorder = 1)
     
     #fig.savefig(BIAS_archive + '/BIAS_NUCAPS_1000m_1200_ALL', dpi=300, bbox_inches = "tight")
     ax1.legend(fontsize = 25)
@@ -995,9 +1176,9 @@ while firstobj != lastobj:
     ax1.tick_params(labelsize = 30)
     ax1.set_title('Std', fontsize = 30)
     ax1.set_ylim(0, 13000)
-    ax1.set_xlim(0, 8)
+    #ax1.set_xlim(0, 8)
     ax1.set_yticks(np.arange(0,13000, 1000))
-    ax1.set_xticks(np.arange(0, 8, 2))
+    #ax1.set_xticks(np.arange(0, 8, 2))
     ax1.axvspan(0, 1, alpha=0.5, color='dimgrey', zorder = 0)
     ax1.axvspan(1, 2, alpha=0.5, color='grey', zorder = 0)
     ax1.axvspan(2, 6, alpha=0.5, color='lightgrey', zorder = 0)
@@ -1021,10 +1202,7 @@ while firstobj != lastobj:
     #ax1.plot(std_temp_NUCAPS_all.std_temp, std_temp_NUCAPS_all.altitude_m, color = 'darkslategrey', linewidth = 6, label = 'T NUCAPS all', zorder = 0)
     #ax1.plot(std_temp_d_NUCAPS_all.std_temp_d, std_temp_NUCAPS_all.altitude_m, color = 'darkslategrey', linewidth = 6, label = 'Td NUCAPS all', linestyle = '--',zorder = 1)
     
-    # min bias
-    #ax1.plot(std_temp_NUCAPS_all_min_bias_run.std_temp, std_temp_NUCAPS_all_min_bias_run.altitude_m, color = 'forestgreen', linewidth = 2, label = 'T NUCAPS all min run bias', zorder = 0)
-    #ax1.plot(std_temp_d_NUCAPS_all_min_bias_run.std_temp_d, std_temp_NUCAPS_all_min_bias_run.altitude_m, color = 'forestgreen', linewidth = 2, label = 'Td NUCAPS all min run bias', linestyle = '--',zorder = 1)
-
+    ### quality flags ###
     # times with quality flag 0
     #ax1.plot(std_temp_NUCAPS_0.std_temp, std_temp_NUCAPS_0.altitude_m, color = 'green', linewidth = 2, label = 'T NUCAPS 0', zorder = 0)
     #ax1.plot(std_temp_d_NUCAPS_0.std_temp_d, std_temp_NUCAPS_0.altitude_m, color = 'green', linewidth =2, label = 'Td NUCAPS 0', linestyle = '--',zorder = 1)
@@ -1037,18 +1215,26 @@ while firstobj != lastobj:
     #ax1.plot(std_temp_NUCAPS_9.std_temp, std_temp_NUCAPS_9.altitude_m, color = 'lightgreen', linewidth = 2, label = 'T', zorder = 0)
     #ax1.plot(std_temp_d_NUCAPS_9.std_temp_d, std_temp_NUCAPS_9.altitude_m, color = 'lightgreen', linewidth = 2, label = 'Td', zorder = 1)
     
+    ### bias correced ###
+    #ax1.plot(std_temp_NUCAPS_all_minbias_0days.std_temp, std_temp_NUCAPS_all_minbias_0days.altitude_m, color = 'red', linewidth = 3, label = 'T NUCAPS all', zorder = 0)
+    #ax1.plot(std_temp_d_NUCAPS_all_minbias_0days.std_temp_d, std_temp_NUCAPS_all_minbias_0days.altitude_m, color = 'red', linewidth = 3, label = 'Td NUCAPS all', linestyle = '--',zorder = 1)
+
+    #ax1.plot(std_temp_NUCAPS_all_minbias_3days.std_temp, std_temp_NUCAPS_all_minbias_3days.altitude_m, color = 'green', linewidth = 3, label = 'T NUCAPS all', zorder = 0)
+    #ax1.plot(std_temp_d_NUCAPS_all_minbias_3days.std_temp_d, std_temp_NUCAPS_all_minbias_3days.altitude_m, color = 'green', linewidth = 3, label = 'Td NUCAPS all', linestyle = '--',zorder = 1)
+
+    #ax1.plot(std_temp_NUCAPS_all_minbias_7days.std_temp, std_temp_NUCAPS_all_minbias_7days.altitude_m, color = 'orange', linewidth = 3, label = 'T NUCAPS all', zorder = 0)
+    #ax1.plot(std_temp_d_NUCAPS_all_minbias_7days.std_temp_d, std_temp_NUCAPS_all_minbias_7days.altitude_m, color = 'orange', linewidth = 3, label = 'Td NUCAPS all', linestyle = '--',zorder = 1)
+
+    #ax1.plot(std_temp_NUCAPS_all_minbias_30days.std_temp, std_temp_NUCAPS_all_minbias_30days.altitude_m, color = 'navy', linewidth = 3, label = 'T NUCAPS all', zorder = 0)
+    #ax1.plot(std_temp_d_NUCAPS_all_minbias_30days.std_temp_d, std_temp_NUCAPS_all_minbias_30days.altitude_m, color = 'navy', linewidth = 3, label = 'Td NUCAPS all', linestyle = '--',zorder = 1)
+    
     #####
     ### NUCAPS ###
     # all
     #ax2.plot(number_temp_NUCAPS_all.number, number_temp_NUCAPS_all.altitude_m, color = 'darkslategrey', linewidth = 6,  zorder = 0)
     #ax2.plot(number_temp_d_NUCAPS_all.number, number_temp_d_NUCAPS_all.altitude_m, color = 'darkslategrey', linewidth = 6, linestyle = '--', zorder = 1)
     
-    #x2.plot(number_temp_NUCAPS_all_minbias_run.number, number_temp_NUCAPS_all_minbias_run.altitude_m, color = 'forestgreen', linewidth = 2,  zorder = 0)
-    #ax2.plot(number_temp_d_NUCAPS_all_min_bias_run.number, number_temp_d_NUCAPS_all_min_bias_run.altitude_m, color = 'forestgreen', linewidth = 2, linestyle = '--', zorder = 1)
-    #min bias
-    #ax2.plot(number_temp_NUCAPS_all_minbias.number, number_temp_NUCAPS_all_minbias.altitude_m, color = 'steelblue', linewidth = 3,  zorder = 0)
-    #ax2.plot(number_temp_d_NUCAPS_all_minbias.number, number_temp_d_NUCAPS_all_minbias.altitude_m, color = 'steelblue', linewidth = 3, linestyle = '--', zorder = 1)
-    
+    ### quality flag ###    
     # times with quality flag 0
     #ax2.plot(number_temp_NUCAPS_0.number, number_temp_NUCAPS_0.altitude_m, color = 'green', linewidth = 2,  zorder = 0)
     #ax2.plot(number_temp_d_NUCAPS_0.number, number_temp_d_NUCAPS_0.altitude_m, color = 'green', linewidth = 2, linestyle = '--', zorder = 1)
@@ -1061,6 +1247,22 @@ while firstobj != lastobj:
     #ax2.plot(number_temp_NUCAPS_9.number, number_temp_NUCAPS_9.altitude_m, color = 'lightgreen', linewidth = 2,  zorder = 0)
     #ax2.plot(number_temp_d_NUCAPS_9.number, number_temp_d_NUCAPS_9.altitude_m, color = 'lightgreen', linewidth = 2, linestyle = '--', zorder = 1)
     
+    ### bias corrected ###
+    #ax2.plot(number_temp_NUCAPS_all.number, number_temp_NUCAPS_all.altitude_m, color = 'darkslategrey', linewidth = 3,  zorder = 0)
+    #ax2.plot(number_temp_d_NUCAPS_all.number, number_temp_d_NUCAPS_all.altitude_m, color = 'darkslategrey', linewidth =3, linestyle = '--', zorder = 1)
+    
+    #ax2.plot(number_temp_NUCAPS_all_minbias_0days.number, number_temp_NUCAPS_all_minbias_0days.altitude_m, color = 'red', linewidth = 3,  zorder = 0)
+    #ax2.plot(number_temp_d_NUCAPS_all_minbias_0days.number, number_temp_d_NUCAPS_all_minbias_0days.altitude_m, color = 'red', linewidth =3, linestyle = '--', zorder = 1)
+
+    #ax2.plot(number_temp_NUCAPS_all_minbias_3days.number, number_temp_NUCAPS_all_minbias_3days.altitude_m, color = 'green', linewidth = 3,  zorder = 0)
+    #ax2.plot(number_temp_d_NUCAPS_all_minbias_3days.number, number_temp_d_NUCAPS_all_minbias_3days.altitude_m, color = 'green', linewidth =3, linestyle = '--', zorder = 1)
+
+    #ax2.plot(number_temp_NUCAPS_all_minbias_7days.number, number_temp_NUCAPS_all_minbias_7days.altitude_m, color = 'orange', linewidth = 3,  zorder = 0)
+    #ax2.plot(number_temp_d_NUCAPS_all_minbias_7days.number, number_temp_d_NUCAPS_all_minbias_7days.altitude_m, color = 'orange', linewidth =3, linestyle = '--', zorder = 1)
+
+    #ax2.plot(number_temp_NUCAPS_all_minbias_30days.number, number_temp_NUCAPS_all_minbias_30days.altitude_m, color = 'navy', linewidth = 3,  zorder = 0)
+    #ax2.plot(number_temp_d_NUCAPS_all_minbias_30days.number, number_temp_d_NUCAPS_all_minbias_30days.altitude_m, color = 'navy', linewidth =3, linestyle = '--', zorder = 1)
+
     ##########################################
     ##### D) RALMO: Raman lidar 
     #########################################
@@ -1073,7 +1275,17 @@ while firstobj != lastobj:
     #ax1.plot(std_temp_RA_korr_unc_rel.std_temp, std_temp_RA_korr_unc_rel.altitude_m, color = 'magenta', linewidth = 3, label = 'T korr unc rel', zorder = 0)
     #ax1.plot(std_temp_d_RA_korr_unc_rel.std_temp_d, std_temp_RA_korr_unc_rel.altitude_m, color = 'magenta', linewidth = 3, linestyle = '--',label = 'Td korr unc rel', zorder = 1)
     
-    
+    #ax1.plot(std_temp_RA_minbias_0days.std_temp, std_temp_RA_minbias_0days.altitude_m, color = 'red', linewidth = 3, label = 'T RA', zorder = 0)
+    #ax1.plot(std_temp_d_RA_minbias_0days.std_temp_d, std_temp_RA_minbias_0days.altitude_m, color = 'red', linewidth = 3, label = 'Td RA', linestyle = '--',zorder = 1)
+
+    #ax1.plot(std_temp_RA_minbias_3days.std_temp, std_temp_RA_minbias_3days.altitude_m, color = 'green', linewidth = 3, label = 'T RA', zorder = 0)
+    #ax1.plot(std_temp_d_RA_minbias_3days.std_temp_d, std_temp_RA_minbias_3days.altitude_m, color = 'green', linewidth = 3, label = 'Td RA', linestyle = '--',zorder = 1)
+
+    #ax1.plot(std_temp_RA_minbias_7days.std_temp, std_temp_RA_minbias_7days.altitude_m, color = 'orange', linewidth = 3, label = 'T RA', zorder = 0)
+    #ax1.plot(std_temp_d_RA_minbias_7days.std_temp_d, std_temp_RA_minbias_7days.altitude_m, color = 'orange', linewidth = 3, label = 'Td RA', linestyle = '--',zorder = 1)
+
+    #ax1.plot(std_temp_RA_minbias_30days.std_temp, std_temp_RA_minbias_30days.altitude_m, color = 'navy', linewidth = 3, label = 'T RA', zorder = 0)
+    #ax1.plot(std_temp_d_RA_minbias_30days.std_temp_d, std_temp_RA_minbias_30days.altitude_m, color = 'navy', linewidth = 3, label = 'Td RA', linestyle = '--',zorder = 1)
     # uncertainty
     #ax1.plot(RA_mean_temp_uncertainty.mean_all, RA_mean_temp_uncertainty.altitude_m, color = 'magenta', linewidth = 3, label = 'T uncertainty', zorder = 0)
     #ax1.plot(np.abs(RA_mean_temp_d_uncertainty.mean_all), RA_mean_temp_d_uncertainty.altitude_m, color = 'aqua', linewidth = 3, label = 'Td uncertainty', zorder = 1)
@@ -1088,22 +1300,90 @@ while firstobj != lastobj:
     #ax2.plot(number_temp_RA_korr_unc_rel.number, number_temp_RA_korr_unc_rel.altitude_m, color = 'magenta', linewidth = 3,  zorder = 0)
     #ax2.plot(number_temp_d_RA_korr_unc_rel.number, number_temp_d_RA_korr_unc_rel.altitude_m, color = 'magenta', linewidth = 3, linestyle = '--', zorder = 1)
     
+    ### bias corrected ###
+    #ax2.plot(number_temp_RA.number, number_temp_RA.altitude_m, color = 'darkslategrey', linewidth = 3,  zorder = 0)
+    #ax2.plot(number_temp_d_RA.number, number_temp_d_RA.altitude_m, color = 'darkslategrey', linewidth =3, linestyle = '--', zorder = 1)
+    
+    #ax2.plot(number_temp_RA_minbias_0days.number, number_temp_RA_minbias_0days.altitude_m, color = 'red', linewidth = 3,  zorder = 0)
+    #ax2.plot(number_temp_d_RA_minbias_0days.number, number_temp_d_RA_minbias_0days.altitude_m, color = 'red', linewidth =3, linestyle = '--', zorder = 1)
+
+    #ax2.plot(number_temp_RA_minbias_3days.number, number_temp_RA_minbias_3days.altitude_m, color = 'green', linewidth = 3,  zorder = 0)
+    #ax2.plot(number_temp_d_RA_minbias_3days.number, number_temp_d_RA_minbias_3days.altitude_m, color = 'green', linewidth =3, linestyle = '--', zorder = 1)
+
+    #ax2.plot(number_temp_RA_minbias_7days.number, number_temp_RA_minbias_7days.altitude_m, color = 'orange', linewidth = 3,  zorder = 0)
+    #ax2.plot(number_temp_d_RA_minbias_7days.number, number_temp_d_RA_minbias_7days.altitude_m, color = 'orange', linewidth =3, linestyle = '--', zorder = 1)
+
+    #ax2.plot(number_temp_RA_minbias_30days.number, number_temp_RA_minbias_30days.altitude_m, color = 'navy', linewidth = 3,  zorder = 0)
+    #ax2.plot(number_temp_d_RA_minbias_30days.number, number_temp_d_RA_minbias_30days.altitude_m, color = 'navy', linewidth =3, linestyle = '--', zorder = 1)
     ##########################################
     ## E) RM: Radiometer 
     ##########################################
     ax1.plot(std_temp_RM.std_temp, std_temp_RM.altitude_m, color = 'navy', linewidth = 3, label = 'T RM', zorder = 0)
     ax1.plot(std_temp_d_RM.std_temp_d, std_temp_RM.altitude_m, color = 'navy', linewidth = 3, label = 'Td RM', zorder = 1)
 
+    #ax1.plot(xx.std_temp_d, xx.altitude_m, color = 'navy', linewidth = 3, label = 'Td RM', zorder = 1)
+
+    #ax1.plot(std_temp_RM_minbias_0days.std_temp, std_temp_RM_minbias_0days.altitude_m, color = 'red', linewidth = 3, label = 'T RM', zorder = 0)
+    #ax1.plot(std_temp_d_RM_minbias_0days.std_temp_d, std_temp_RM_minbias_0days.altitude_m, color = 'red', linewidth = 3, label = 'Td NRM', linestyle = '--',zorder = 1)
+
+    #ax1.plot(std_temp_RM_minbias_3days.std_temp, std_temp_RM_minbias_3days.altitude_m, color = 'green', linewidth = 3, label = 'T RM', zorder = 0)
+    #ax1.plot(std_temp_d_RM_minbias_3days.std_temp_d, std_temp_RM_minbias_3days.altitude_m, color = 'green', linewidth = 3, label = 'Td RM', linestyle = '--',zorder = 1)
+
+    #ax1.plot(std_temp_RM_minbias_7days.std_temp, std_temp_RM_minbias_7days.altitude_m, color = 'orange', linewidth = 3, label = 'T RM', zorder = 0)
+    #ax1.plot(std_temp_d_RM_minbias_7days.std_temp_d, std_temp_RM_minbias_7days.altitude_m, color = 'orange', linewidth = 3, label = 'Td RM', linestyle = '--',zorder = 1)
+
+    #ax1.plot(std_temp_RM_minbias_30days.std_temp, std_temp_RM_minbias_30days.altitude_m, color = 'navy', linewidth = 3, label = 'T RM', zorder = 0)
+    #ax1.plot(std_temp_d_RM_minbias_30days.std_temp_d, std_temp_RM_minbias_30days.altitude_m, color = 'navy', linewidth = 3, label = 'Td RM', linestyle = '--',zorder = 1)
+    # uncertainty
+    
     #####
     ax2.plot(number_temp_RM.number, number_temp_RM.altitude_m, color = 'navy', linewidth = 3,  zorder = 0)
     ax2.plot(number_temp_d_RM.number, number_temp_RM.altitude_m, color = 'navy', linewidth = 3, linestyle = 'dotted', zorder = 1)
+    
+    ### bias corrected ###
+    #ax2.plot(number_temp_RM.number, number_temp_RM.altitude_m, color = 'darkslategrey', linewidth = 3,  zorder = 0)
+    #ax2.plot(number_temp_d_RM.number, number_temp_d_RM.altitude_m, color = 'darkslategrey', linewidth =3, linestyle = '--', zorder = 1)
+    
+    #ax2.plot(number_temp_RM_minbias_0days.number, number_temp_RM_minbias_0days.altitude_m, color = 'red', linewidth = 3,  zorder = 0)
+     #ax2.plot(number_temp_d_RM_minbias_0days.number, number_temp_d_RM_minbias_0days.altitude_m, color = 'red', linewidth =3, linestyle = '--', zorder = 1)
+
+    #ax2.plot(number_temp_RM_minbias_3days.number, number_temp_RM_minbias_3days.altitude_m, color = 'green', linewidth = 3,  zorder = 0)
+    #ax2.plot(number_temp_d_RM_minbias_3days.number, number_temp_d_RM_minbias_3days.altitude_m, color = 'green', linewidth =3, linestyle = '--', zorder = 1)
+
+    #ax2.plot(number_temp_RM_minbias_7days.number, number_temp_RM_minbias_7days.altitude_m, color = 'orange', linewidth = 3,  zorder = 0)
+    #ax2.plot(number_temp_d_RM_minbias_7days.number, number_temp_d_RM_minbias_7days.altitude_m, color = 'orange', linewidth =3, linestyle = '--', zorder = 1)
+
+    #ax2.plot(number_temp_RM_minbias_30days.number, number_temp_RM_minbias_30days.altitude_m, color = 'navy', linewidth = 3,  zorder = 0)
+    #ax2.plot(number_temp_d_RM_minbias_30days.number, number_temp_d_RM_minbias_30days.altitude_m, color = 'navy', linewidth =3, linestyle = '--', zorder = 1)
     
     #fig.savefig(STD_archive+'/STD_NUCAPS_1000m_1200_ALL',dpi=300, bbox_inches = "tight")
     ax1.legend(fontsize = 25)
     firstobj= lastobj_month 
 
 
+    ### bias, daily ###
+    ##########################################
+    diff_temp = np.subtract(NUCAPS_smoothed_INCA_all_minbias_30days.temperature_mean.reset_index(drop=True), RS_smoothed_NUCAPS_all.temperature_mean.reset_index(drop=True), axis = 1)
+    diff_temp = pd.DataFrame({'diff_temp':diff_temp.values, 'altitude_m': NUCAPS_smoothed_INCA_all_min_bias_run_current_month.altitude_m.values})
+    diff_temp = diff_temp.astype(float)
+    
+    diff_temp_d = np.subtract(NUCAPS_smoothed_INCA_all_minbias_30days.temperature_d_mean.reset_index(drop=True), RS_smoothed_NUCAPS_all.temperature_d_mean.reset_index(drop=True), axis = 1)
+    diff_temp_d = pd.DataFrame({'diff_temp_d':diff_temp_d.values, 'altitude_m': NUCAPS_smoothed_INCA_all_min_bias_run_current_month.altitude_m.values})
+    diff_temp_d = diff_temp_d.astype(float)
+    
+    fig, ax = plt.subplots(figsize=(3,8)) 
+    ax.plot(diff_temp.diff_temp, diff_temp.altitude_m)
+    ax.set_ylabel('altitude [m]')
+    ax.set_xlabel('mean T bias')
+    ax.set_xlim(-10, 10)
 
+    fig, ax = plt.subplots(figsize=(3,8)) 
+    ax.plot(diff_temp_d.diff_temp_d, diff_temp_d.altitude_m)
+    ax.set_ylabel('altitude [m]')
+    ax.set_xlabel('mean Td bias')
+    ax.set_xlim(-10, 10)
+    
+    
 
 
 
