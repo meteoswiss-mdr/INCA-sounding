@@ -150,15 +150,13 @@ def read_HATPRO(firstobj):
     RM['temperature_degC'] = RM.temperature_K - 273.15
     
     p_w = ((RM.temperature_K * RM.absolute_humidity_gm3) / 2.16679)
-    p_s = metpy.calc.saturation_vapor_pressure(RM.temperature_K.values * units.kelvin)
-        
-    RH = p_w /p_s
-    RM['dew_point_degC'] = metpy.calc.dewpoint_from_relative_humidity(RM.temperature_K.values * units.kelvin, RH.values * units.percent)
-        
+    RM['dew_point_degC'] = metpy.calc.dewpoint((p_w.values * units.Pa))
+    
     RM['time_YMDHMS'] = pd.to_datetime(RM.time_YMDHMS, format = '%Y%m%d%H%M%S')
     
     return RM
-    
+
+
 def calculate_distance_from_onepoint(n_x, n_y, indexes):
     distance_array = np.zeros((n_y,n_x))
     for i in range(n_y):
@@ -403,9 +401,19 @@ def add_altitude_NUCAPS(NUCAPS_data_filtered, firstobj_NUCAPS, lastobj_month):
     NUCAPS_data_filtered.altitude_m = altitude_m.values
     return NUCAPS_data_filtered
 
+def calculate_std(DIFF_COMBINED_MD):
+    DIFF_COMBINED_MD.insert(column = 'number' , value =  DIFF_COMBINED_MD.DIFF.values, loc = 2)
+    DIFF_COMBINED_MD.number[~np.isnan(DIFF_COMBINED_MD.number)] = 1
+    total_number = DIFF_COMBINED_MD.groupby('altitude_m')['number'].count()
+    
+    DIFF_COMBINED_MD.DIFF = DIFF_COMBINED_MD.DIFF**2
+    SUM_COMBINED_MD = DIFF_COMBINED_MD.groupby('altitude_m')['DIFF'].sum().to_frame(name='STD').reset_index()
+    STD_COMBINED_temp = (np.sqrt(SUM_COMBINED_MD.STD)) / total_number.values
+    return STD_COMBINED_temp
+
 ######################################## !!! ########################################
 firstdate = '20200828000000' # !! define start date + midnight/noon
-lastdate = '20200909000000' # !! define end date + midnight/noon
+lastdate = '20200910000000' # !! define end date + midnight/noon
 firstobj=dt.datetime.strptime(firstdate,'%Y%m%d%H%M%S')
 lastobj=dt.datetime.strptime(lastdate,'%Y%m%d%H%M%S')
 ######################################## !!! ########################################
@@ -414,15 +422,19 @@ lat_payerne = 46.8220#1, 48.50, 48.15, 45.26
 
 DT = firstobj.hour
 
-DIFF_COMBINED_MD = pd.DataFrame()
-DIFF_RM_MD = pd.DataFrame()
-DIFF_COSMO_MD = pd.DataFrame()
-DIFF_NUCAPS_MD = pd.DataFrame()
+DIFF_COMBINED_MD_temp = pd.DataFrame()
+DIFF_COMBINED_MD_temp_d = pd.DataFrame()
+DIFF_RM_MD_temp = pd.DataFrame()
+DIFF_RM_MD_temp_d = pd.DataFrame()
+DIFF_COSMO_MD_temp = pd.DataFrame()
+DIFF_COSMO_MD_temp_d = pd.DataFrame()
   
-STD_COMBINED_MD = pd.DataFrame()
-STD_RM_MD = pd.DataFrame()
-STD_COSMO_MD = pd.DataFrame()
-STD_NUCAPS_MD = pd.DataFrame()
+STD_COMBINED_MD_temp = pd.DataFrame()
+STD_COMBINED_MD_temp_d = pd.DataFrame()
+STD_RM_MD_temp = pd.DataFrame()
+STD_RM_MD_temp_d = pd.DataFrame()
+STD_COSMO_MD_temp = pd.DataFrame()
+STD_COSMO_MD_temp_d = pd.DataFrame()
 
 exp = 1
 sigma = 5
@@ -445,7 +457,8 @@ while firstobj != lastobj:
     indexes = np.array(np.where(INCA_grid.lon_1 == coords_close[0,1]))
     INCA_grid_payerne = pd.DataFrame({'altitude_m' : INCA_grid.HFL[:, indexes[0], indexes[1]][:,0,0].values})[::-1]
     INCA_grid_payerne = INCA_grid_payerne.iloc[:,0].reset_index(drop=True)
-        ##########################################
+    
+    ##########################################
     ##### RADIOSONDE
     ########################################r##
     RS_data = read_radiosonde(firstobj)
@@ -555,9 +568,7 @@ while firstobj != lastobj:
     
     #:::::::::::TOTAL:::::::::::
     STD_COSMO_temp_total = COSMO_std_temp_absolute 
-    STD_COSMO_temp_d_total = COSMO_std_temp_d_absolute  
-    STD_COSMO_temp_total_1 = STD_COSMO_temp_total
-    
+    STD_COSMO_temp_d_total = COSMO_std_temp_d_absolute      
         
     ############################################################
     # Std in SPACE
@@ -611,8 +622,8 @@ while firstobj != lastobj:
     ############################################################
     #:::::::::::ABSOLUTE:::::::::::
     # read data
-    RM_std_temp = pd.read_csv('/data/COALITION2/PicturesSatellite/results_NAL/Std_files/std_RM_temp_'+str(DT)+'_new.csv')
-    RM_std_temp_d = pd.read_csv('/data/COALITION2/PicturesSatellite/results_NAL/Std_files/std_RM_temp_d_'+str(DT)+'_new.csv')
+    RM_std_temp = pd.read_csv('/data/COALITION2/PicturesSatellite/results_NAL/Std_files/std_RM_temp_'+str(DT)+'.csv')
+    RM_std_temp_d = pd.read_csv('/data/COALITION2/PicturesSatellite/results_NAL/Std_files/std_RM_temp_d_'+str(DT)+'.csv')
      # expand in space 
     STD_RM_temp_absolute = expand_in_space(RM_std_temp.std_temp.values, n_z, n_y, n_x)
     STD_RM_temp_d_absolute = expand_in_space(RM_std_temp_d.std_temp_d.values, n_z, n_y, n_x)                  
@@ -661,114 +672,87 @@ while firstobj != lastobj:
     a_RADIOMETER_temp = sigma_COSMO / STD_RADIOMETER_COSMO
     a_RADIOMETER_temp[np.isnan(STD_RM_temp_total)] = 0
     
+    # < temperature d >
+    STD_RM_temp_d_total_1 = STD_RM_temp_d_total
+    STD_RM_temp_d_total_1[np.isnan(T_d_RM)] = np.nan
+    sigma_RADIOMETER = STD_RM_temp_d_total_1**2
+    sigma_COSMO = STD_COSMO_temp_d_total**2
+
+    STD_RADIOMETER_COSMO = np.nansum(np.stack((sigma_COSMO, sigma_RADIOMETER)), axis = 0)
+
+    a_COSMO_temp_d = sigma_RADIOMETER/ STD_RADIOMETER_COSMO
+    a_COSMO_temp_d[np.isnan(STD_RM_temp_d_total)] = 1
     
+    a_RADIOMETER_temp_d = sigma_COSMO / STD_RADIOMETER_COSMO
+    a_RADIOMETER_temp_d[np.isnan(STD_RM_temp_d_total)] = 0
     
     ############################################################ COMBINE DATASETS ###########A################################################
     T_COMBINED = np.nansum(np.stack(((a_COSMO_temp * T_COSMO) ,  (a_RADIOMETER_temp * T_RM))), axis = 0)
     plot_profile(T_COMBINED,  T_COSMO, T_RM)
      
- 
+    T_d_COMBINED = np.nansum(np.stack(((a_COSMO_temp_d * T_d_COSMO) ,  (a_RADIOMETER_temp_d * T_d_RM))), axis = 0)
+    plot_profile(T_d_COMBINED,  T_d_COSMO, T_d_RM)
        
     ############################################################ BIAS AND STD ############################################################ 
     # std
     DIFF_COSMO_temp = pd.DataFrame({'DIFF' : (RS_averaged.temperature_mean -  T_COSMO[:, indexes[0,0], indexes[1,0]]), 'altitude_m' :INCA_grid_payerne})
+    DIFF_COSMO_temp_d = pd.DataFrame({'DIFF' : (RS_averaged.temperature_d_mean -  T_d_COSMO[:, indexes[0,0], indexes[1,0]]), 'altitude_m' :INCA_grid_payerne})
     DIFF_COMBINED_temp = pd.DataFrame({'DIFF' : (RS_averaged.temperature_mean - T_COMBINED[:, indexes[0,0], indexes[1,0]]), 'altitude_m' :INCA_grid_payerne})
+    DIFF_COMBINED_temp_d = pd.DataFrame({'DIFF' : (RS_averaged.temperature_d_mean - T_d_COMBINED[:, indexes[0,0], indexes[1,0]]), 'altitude_m' :INCA_grid_payerne})
     DIFF_RM_temp = pd.DataFrame({'DIFF' : (RS_averaged.temperature_mean - T_RM[:, indexes[0,0], indexes[1,0]]), 'altitude_m' :INCA_grid_payerne})
+    DIFF_RM_temp_d = pd.DataFrame({'DIFF' : (RS_averaged.temperature_d_mean - T_d_RM[:, indexes[0,0], indexes[1,0]]), 'altitude_m' :INCA_grid_payerne})
+
     #DIFF_NUCAPS_temp = pd.DataFrame({'DIFF' : (RS_averaged.temperature_mean - T_NUCAPS[:, indexes[0,0], indexes[1,0]]), 'altitude_m' :INCA_grid_payerne})
     
     plot_diff(DIFF_COMBINED_temp, DIFF_COSMO_temp, DIFF_RM_temp, INCA_grid_payerne)
+    plot_diff(DIFF_COMBINED_temp_d, DIFF_COSMO_temp_d, DIFF_RM_temp_d, INCA_grid_payerne)
 
-    DIFF_COMBINED_MD = DIFF_COMBINED_MD.append(DIFF_COMBINED_temp)
-    DIFF_RM_MD = DIFF_RM_MD.append(DIFF_RM_temp)
-    DIFF_COSMO_MD = DIFF_COSMO_MD.append(DIFF_COSMO_temp)
+    DIFF_COMBINED_MD_temp = DIFF_COMBINED_MD_temp.append(DIFF_COMBINED_temp)
+    DIFF_COMBINED_MD_temp_d = DIFF_COMBINED_MD_temp_d.append(DIFF_COMBINED_temp_d)
+    DIFF_RM_MD_temp = DIFF_RM_MD_temp.append(DIFF_RM_temp)
+    DIFF_RM_MD_temp_d = DIFF_RM_MD_temp_d.append(DIFF_RM_temp_d)
+    DIFF_COSMO_MD_temp = DIFF_COSMO_MD_temp.append(DIFF_COSMO_temp)
+    DIFF_COSMO_MD_temp_d = DIFF_COSMO_MD_temp_d.append(DIFF_COSMO_temp_d)
     #DIFF_NUCAPS_MD = DIFF_NUCAPS_MD.append(DIFF_NUCAPS_temp)
     
     # std
     STD_COSMO_temp = pd.DataFrame({'STD' : np.nanstd((RS_averaged.temperature_mean.reset_index(drop=True),  T_COSMO[:, indexes[0,0], indexes[1,0]]), axis = 0), 'altitude_m' : INCA_grid_payerne})
-    #STD_COSMO_temp[np.isnan(T_COSMO)] = np.nan
     STD_COMBINED_temp = pd.DataFrame({'STD' :np.nanstd( (RS_averaged.temperature_mean.reset_index(drop=True),  T_COMBINED[:, indexes[0,0], indexes[1,0]]), axis = 0), 'altitude_m' : INCA_grid_payerne})
-    #STD_COMBINED_temp[np.isnan(T_COMBINED)] = np.nan
     STD_RM_temp = pd.DataFrame({'STD' :np.nanstd( (RS_averaged.temperature_mean.reset_index(drop=True),  T_RM[:, indexes[0,0], indexes[1,0]]), axis = 0), 'altitude_m' : INCA_grid_payerne})
-    #STD_RM_temp[np.isnan(T_RM)] = np.nan
-    #STD_NUCAPS_temp = pd.DataFrame({'STD' :np.nanstd( (RS_averaged.temperature_mean.reset_index(drop=True),  T_NUCAPS[:, indexes[0,0], indexes[1,0]]), axis = 0), 'altitude_m' : INCA_grid_payerne})
-    #STD_NUCAPS_temp[np.isnan(T_NUCAPS)] = np.nan
-    
+
     plot_std(STD_COMBINED_temp.STD.values, STD_COSMO_temp.STD.values,  STD_RM_temp.STD.values)
     
-    STD_COMBINED_MD  = STD_COMBINED_MD.append(STD_COMBINED_temp)
-    STD_RM_MD = STD_RM_MD.append(STD_RM_temp)
-    STD_COSMO_MD = STD_COSMO_MD.append(STD_COSMO_temp)
+    STD_COMBINED_MD_temp  = STD_COMBINED_MD_temp.append(STD_COMBINED_temp)
+    STD_RM_MD_temp = STD_RM_MD_temp.append(STD_RM_temp)
+    STD_COSMO_MD_temp = STD_COSMO_MD_temp.append(STD_COSMO_temp)
     #STD_NUCAPS_MD = STD_NUCAPS_MD.append(STD_NUCAPS_temp)
  
-    
-    
-    
     firstobj = firstobj + dt.timedelta(days=1)
     
-
-
-
-
     
-
-    
-
-
-
-
-
 #:::::::::::DIFF:::::::::::
-DIFF_COMBINED = DIFF_COMBINED_MD.groupby('altitude_m')['DIFF'].mean().to_frame(name='mean_all').reset_index()
-DIFF_COSMO = DIFF_COSMO_MD.groupby('altitude_m')['DIFF'].mean().to_frame(name='mean_all').reset_index()
-DIFF_RM = DIFF_RM_MD.groupby('altitude_m')['DIFF'].mean().to_frame(name='mean_all').reset_index()
+DIFF_COMBINED_temp = DIFF_COMBINED_MD_temp.groupby('altitude_m')['DIFF'].mean().to_frame(name='mean_all').reset_index()
+DIFF_COMBINED_temp_d = DIFF_COMBINED_MD_temp_d.groupby('altitude_m')['DIFF'].mean().to_frame(name='mean_all').reset_index()
+DIFF_COSMO_temp = DIFF_COSMO_MD_temp.groupby('altitude_m')['DIFF'].mean().to_frame(name='mean_all').reset_index()
+DIFF_COSMO_temp_d = DIFF_COSMO_MD_temp_d.groupby('altitude_m')['DIFF'].mean().to_frame(name='mean_all').reset_index()
+DIFF_RM_temp = DIFF_RM_MD_temp.groupby('altitude_m')['DIFF'].mean().to_frame(name='mean_all').reset_index()
+DIFF_RM_temp_d = DIFF_RM_MD_temp_d.groupby('altitude_m')['DIFF'].mean().to_frame(name='mean_all').reset_index()
 #DIFF_NUCAPS = DIFF_NUCAPS_MD.groupby('altitude_m')['DIFF'].mean().to_frame(name='mean_all').reset_index()
 
-plot_diff(DIFF_COMBINED.mean_all, DIFF_COSMO.mean_all, DIFF_RM.mean_all,  INCA_grid_payerne)
-
-
-
+plot_diff(DIFF_COMBINED_temp.mean_all, DIFF_COSMO_temp.mean_all, DIFF_RM_temp.mean_all,  INCA_grid_payerne)
+plot_diff(DIFF_COMBINED_temp_d.mean_all, DIFF_COSMO_temp_d.mean_all, DIFF_RM_temp_d.mean_all,  INCA_grid_payerne)
 
 #:::::::::::STD:::::::::::
-DIFF_COMBINED_MD.insert(column = 'number' , value =  DIFF_COMBINED_MD.DIFF.values, loc = 2)
-DIFF_COMBINED_MD.number[~np.isnan(DIFF_COMBINED_MD.number)] = 1
-total_number = DIFF_COMBINED_MD.groupby('altitude_m')['number'].count()
+STD_COMBINED_temp = calculate_std(DIFF_COMBINED_MD_temp)
+STD_COMBINED_temp_d = calculate_std(DIFF_COMBINED_MD_temp_d)
+STD_COSMO_temp = calculate_std(DIFF_COSMO_MD_temp)
+STD_COSMO_temp_d = calculate_std(DIFF_COSMO_MD_temp_d)
+STD_RM_temp = calculate_std(DIFF_RM_MD_temp)
+STD_RM_temp_d = calculate_std(DIFF_RM_MD_temp_d)
 
-DIFF_COMBINED_MD.DIFF = DIFF_COMBINED_MD.DIFF**2
-SUM_COMBINED_MD = DIFF_COMBINED_MD.groupby('altitude_m')['DIFF'].sum().to_frame(name='STD').reset_index()
-STD_COMBINED_temp = (np.sqrt(SUM_COMBINED_MD.STD)) / total_number.values
-
-
-
-DIFF_COSMO_MD.insert(column = 'number' , value =  DIFF_COSMO_MD.DIFF.values, loc = 2)
-DIFF_COSMO_MD.number[~np.isnan(DIFF_COSMO_MD.number)] = 1
-total_number = DIFF_COSMO_MD.groupby('altitude_m')['number'].count()
-
-DIFF_COSMO_MD.DIFF = DIFF_COSMO_MD.DIFF**2
-SUM_COSMO_MD = DIFF_COSMO_MD.groupby('altitude_m')['DIFF'].sum().to_frame(name='STD').reset_index()
-STD_COSMO_temp = np.sqrt(SUM_COSMO_MD.STD) / total_number.values
-
-
-
-DIFF_RM_MD.insert(column = 'number' , value =  DIFF_RM_MD.DIFF.values, loc = 2)
-DIFF_RM_MD.number[~np.isnan(DIFF_RM_MD.number)] = 1
-total_number = DIFF_RM_MD.groupby('altitude_m')['number'].count()
-
-DIFF_RM_MD.DIFF = DIFF_RM_MD.DIFF**2
-SUM_RM_MD = DIFF_RM_MD.groupby('altitude_m')['DIFF'].sum().to_frame(name='STD').reset_index()
-STD_RM_temp = np.sqrt(SUM_RM_MD.STD) / total_number.values
-
-    
-
-#DIFF_NUCAPS_MD.insert(column = 'number' , value =  DIFF_NUCAPS_MD.DIFF.values, loc = 2)
-#DIFF_NUCAPS_MD.number[~np.isnan(DIFF_NUCAPS_MD.number)] = 1
-#total_number = DIFF_NUCAPS_MD.groupby('altitude_m')['number'].count()
-
-#DIFF_NUCAPS_MD.DIFF = DIFF_NUCAPS_MD.DIFF**2
-#SUM_NUCAPS_MD = DIFF_NUCAPS_MD.groupby('altitude_m')['DIFF'].sum().to_frame(name='STD').reset_index()
-#STD_NUCAPS = np.sqrt(SUM_NUCAPS_MD.STD) / total_number.values
 
 plot_std(STD_COMBINED_temp, STD_COSMO_temp, STD_RM_temp)
-   
+plot_std(STD_COMBINED_temp_d, STD_COSMO_temp_d, STD_RM_temp_d)
 
 
 
