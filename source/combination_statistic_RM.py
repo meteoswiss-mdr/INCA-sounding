@@ -404,8 +404,8 @@ def add_altitude_NUCAPS(NUCAPS_data_filtered, firstobj_NUCAPS, lastobj_month):
     return NUCAPS_data_filtered
 
 ######################################## !!! ########################################
-firstdate = '20200721000000' # !! define start date + midnight/noon
-lastdate = '20200728000000' # !! define end date + midnight/noon
+firstdate = '20200828000000' # !! define start date + midnight/noon
+lastdate = '20200909000000' # !! define end date + midnight/noon
 firstobj=dt.datetime.strptime(firstdate,'%Y%m%d%H%M%S')
 lastobj=dt.datetime.strptime(lastdate,'%Y%m%d%H%M%S')
 ######################################## !!! ########################################
@@ -426,7 +426,7 @@ STD_NUCAPS_MD = pd.DataFrame()
 
 exp = 1
 sigma = 5
-factor = 1
+factor = 0.5
 while firstobj != lastobj:              
     print(firstobj)
     lastobj_now = firstobj + dt.timedelta(days=1)
@@ -456,7 +456,7 @@ while firstobj != lastobj:
     ##########################################
     ##### COSMO
     ##########################################
-    COSMO_data = xr.open_dataset('/data/COALITION2/database/cosmo/T-TD_3D/cosmo1_inca_'+str(dt.datetime.strftime(firstobj, '%Y%m%d'))+'06_06.nc')
+    COSMO_data = xr.open_dataset('/data/COALITION2/database/cosmo/T-TD_3D/cosmo-1e_inca_'+str(dt.datetime.strftime(firstobj, '%Y%m%d'))+'06_06_00.nc') #cosmo1_inca_'+str(dt.datetime.strftime(firstobj, '%Y%m%d'))+'06_06.nc')
           
     ## define dimensionsr
     n_z = COSMO_data.t_inca.values.shape[1]
@@ -611,8 +611,8 @@ while firstobj != lastobj:
     ############################################################
     #:::::::::::ABSOLUTE:::::::::::
     # read data
-    RM_std_temp = pd.read_csv('/data/COALITION2/PicturesSatellite/results_NAL/Std_files/std_RM_temp_'+str(DT)+'.csv')
-    RM_std_temp_d = pd.read_csv('/data/COALITION2/PicturesSatellite/results_NAL/Std_files/std_RM_temp_d_'+str(DT)+'.csv')
+    RM_std_temp = pd.read_csv('/data/COALITION2/PicturesSatellite/results_NAL/Std_files/std_RM_temp_'+str(DT)+'_new.csv')
+    RM_std_temp_d = pd.read_csv('/data/COALITION2/PicturesSatellite/results_NAL/Std_files/std_RM_temp_d_'+str(DT)+'_new.csv')
      # expand in space 
     STD_RM_temp_absolute = expand_in_space(RM_std_temp.std_temp.values, n_z, n_y, n_x)
     STD_RM_temp_d_absolute = expand_in_space(RM_std_temp_d.std_temp_d.values, n_z, n_y, n_x)                  
@@ -723,7 +723,7 @@ DIFF_COSMO = DIFF_COSMO_MD.groupby('altitude_m')['DIFF'].mean().to_frame(name='m
 DIFF_RM = DIFF_RM_MD.groupby('altitude_m')['DIFF'].mean().to_frame(name='mean_all').reset_index()
 #DIFF_NUCAPS = DIFF_NUCAPS_MD.groupby('altitude_m')['DIFF'].mean().to_frame(name='mean_all').reset_index()
 
-plot_diff(DIFF_COMBINED, DIFF_COSMO, DIFF_RM,  INCA_grid_payerne)
+plot_diff(DIFF_COMBINED.mean_all, DIFF_COSMO.mean_all, DIFF_RM.mean_all,  INCA_grid_payerne)
 
 
 
