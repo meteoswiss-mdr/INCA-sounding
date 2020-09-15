@@ -405,7 +405,7 @@ def add_altitude_NUCAPS(NUCAPS_data_filtered, firstobj_NUCAPS, lastobj_month):
 
 ######################################## !!! ########################################
 firstdate = '20200721000000' # !! define start date + midnight/noon
-lastdate = '20200811000000' # !! define end date + midnight/noon
+lastdate = '20200728000000' # !! define end date + midnight/noon
 firstobj=dt.datetime.strptime(firstdate,'%Y%m%d%H%M%S')
 lastobj=dt.datetime.strptime(lastdate,'%Y%m%d%H%M%S')
 ######################################## !!! ########################################
@@ -723,7 +723,9 @@ DIFF_COSMO = DIFF_COSMO_MD.groupby('altitude_m')['DIFF'].mean().to_frame(name='m
 DIFF_RM = DIFF_RM_MD.groupby('altitude_m')['DIFF'].mean().to_frame(name='mean_all').reset_index()
 #DIFF_NUCAPS = DIFF_NUCAPS_MD.groupby('altitude_m')['DIFF'].mean().to_frame(name='mean_all').reset_index()
 
-plot_diff(DIFF_COMBINED_temp, DIFF_COSMO_temp, DIFF_RM_temp,  INCA_grid_payerne)
+plot_diff(DIFF_COMBINED, DIFF_COSMO, DIFF_RM,  INCA_grid_payerne)
+
+
 
 
 #:::::::::::STD:::::::::::
