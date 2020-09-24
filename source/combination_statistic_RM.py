@@ -41,7 +41,7 @@ import metpy.calc as mpcalc
 import metpy 
 from metpy.calc import pressure_to_height_std
 import os
-os.environ["PROJ_LIB"] = os.path.join(os.environ["CONDA_PREFIX"], "share", "proj")
+#os.environ["PROJ_LIB"] = os.path.join(os.environ["CONDA_PREFIX"], "share", "proj")
 import xarray
 ### PARAMETERS FOR MATPLOTLIB :
 import matplotlib as mpl
@@ -154,6 +154,26 @@ def read_HATPRO(firstobj):
     
     RM['time_YMDHMS'] = pd.to_datetime(RM.time_YMDHMS, format = '%Y%m%d%H%M%S')
     
+    return RM
+
+def read_HATPRO(firstobj):
+    url = 'http://wlsprod.meteoswiss.ch:9010/jretrievedwh/profile/data/wmo_ind?locationIds=06610&delimiter=comma&measCatNr=1&dataSourceId=38&parameterIds=3147,3148&date='+str(dt.datetime.strftime(firstobj, '%Y%m%d%H%M%S'))+'&obsTypeIds=31'
+    RM = pd.read_csv(url, skiprows = [1], sep=',') 
+    RM = RM.rename(columns = {'termin' : 'time_YMDHMS' , '3147' : 'temperature_K', '3148' : 'absolute_humidity_gm3', 'level' : 'altitude_m'})
+    # < temperature >
+    RM['temperature_degC'] = RM.temperature_K - 273.15
+        
+    p_w = ((RM.temperature_K * RM.absolute_humidity_gm3) / 2.16679)
+    RM['dew_point_degC'] = metpy.calc.dewpoint((p_w.values * units.Pa))
+        
+    url = 'http://wlsprod.meteoswiss.ch:9010/jretrievedwh/profile/integral/wmo_ind?locationIds=06610&measCatNr=1&dataSourceId=38&parameterIds=3150,5560,5561&date='+str(dt.datetime.strftime(firstobj, '%Y%m%d%H%M%S'))+'&delimiter=comma&obsTypeIds=31'
+    RM_quality_flag = pd.read_csv(url, skiprows = [1], sep=',')
+    RM['quality_flag'] = np.nan * len(RM)
+    RM['radiometer_quality_flag_temperature_profile'] = np.nan * len(RM)
+    RM['radiometer_quality_flag_humidity_profile'] = np.nan * len(RM)
+
+            
+    RM['time_YMDHMS'] = pd.to_datetime(RM.time_YMDHMS, format = '%Y%m%d%H%M%S')                                         
     return RM
 
 
@@ -281,6 +301,24 @@ def plot_diff(DIFF_COMBINED, DIFF_COSMO, DIFF_RM,  INCA_grid_payerne):
     ax.set_yticks(np.arange(0,15000,1000))
     ax.grid()
     ax.legend(fontsize = 20)
+  
+def plot_diff_save(DIFF_COMBINED, DIFF_COSMO, DIFF_RM,  INCA_grid_payerne, name):
+    fig, ax = plt.subplots(figsize = (5, 12))  
+    ax.plot(DIFF_COMBINED, INCA_grid_payerne, color = 'red', label = 'combined', linewidth = 2)
+    ax.plot(DIFF_COSMO, INCA_grid_payerne, color = 'green', label = 'COSMO', linewidth = 2)
+    ax.plot(DIFF_RM, INCA_grid_payerne, color = 'navy', label = 'HATPRO', linewidth = 2)
+    #ax.plot(DIFF_NUCAPS_temp, INCA_grid_payerne, color = 'purple', label = 'NUCAPS', linewidth = 2)
+    ax.axvline(x=0, linewidth = 2, color = 'dimgrey', linestyle = '--')
+    ax.set_xlabel('Difference [K]', size = 20)
+    ax.set_ylabel('Altitude [m]', size = 20)
+    ax.set_xlim(0,1)
+    #ax.set_ylim(0,1500)
+    ax.set_xticks(np.arange(-6,7, 2))
+    ax.tick_params(labelsize = 20)
+    ax.set_yticks(np.arange(0,15000,1000))
+    ax.grid()
+    ax.legend(fontsize = 20)
+    fig.savefig(name)
     
 def plot_std(STD_COMBINED, STD_COSMO, STD_RM):
     fig, ax = plt.subplots(figsize = (5, 12))  
@@ -300,6 +338,26 @@ def plot_std(STD_COMBINED, STD_COSMO, STD_RM):
     ax.legend(fontsize = 20)
     ax.fill_betweenx( INCA_grid_payerne, STD_COSMO, STD_COMBINED, color= 'gold', where = STD_COSMO > STD_COMBINED, interpolate = True, alpha = 1)
     ax.fill_betweenx( INCA_grid_payerne, STD_COSMO, STD_COMBINED, color= 'grey', where = STD_COSMO < STD_COMBINED,interpolate = True, alpha= 1)
+    
+def plot_std_save(STD_COMBINED, STD_COSMO, STD_RM, name):
+    fig, ax = plt.subplots(figsize = (5, 12))  
+    ax.plot(STD_COMBINED, INCA_grid_payerne, color = 'red', label = 'combined', linewidth = 2)
+    ax.plot(STD_COSMO, INCA_grid_payerne, color = 'green', label = 'COSMO', linewidth = 2)
+    ax.plot(STD_RM, INCA_grid_payerne, color = 'slategrey', label = 'HATPRO', linewidth = 2)
+    #ax.plot(STD_NUCAPS, INCA_grid_payerne, color = 'purple', label = 'NUCAPS', linewidth = 2)
+    ax.axvline(x=0, linewidth = 2, color = 'dimgrey', linestyle = '--')
+    ax.set_xlabel('Std [K]', size = 20)
+    ax.set_ylabel('Altitude [m]', size = 20)
+    ax.set_xlim(0,3)
+    #ax.set_ylim(0,1500)
+    ax.set_xticks(np.arange(0,3))
+    ax.tick_params(labelsize = 20)
+    ax.set_yticks(np.arange(0,15000,1000))
+    ax.grid()
+    ax.legend(fontsize = 20)
+    ax.fill_betweenx( INCA_grid_payerne, STD_COSMO, STD_COMBINED, color= 'gold', where = STD_COSMO > STD_COMBINED, interpolate = True, alpha = 1)
+    ax.fill_betweenx( INCA_grid_payerne, STD_COSMO, STD_COMBINED, color= 'grey', where = STD_COSMO < STD_COMBINED,interpolate = True, alpha= 1)
+    fig.savefig(name)
 
 def open_NUCAPS_file(NUCAPS_file):       
     ds = xr.open_dataset(NUCAPS_file, decode_times=False)  # time units are non-standard, so we dont decode them here 
@@ -411,9 +469,26 @@ def calculate_std(DIFF_COMBINED_MD):
     STD_COMBINED_temp = (np.sqrt(SUM_COMBINED_MD.STD)) / total_number.values
     return STD_COMBINED_temp
 
+def read_SMN(firstobj):
+    url = 'http://wlsprod.meteoswiss.ch:9010/jretrievedwh/surface/wmo_ind?locationIds=06610&date='+str(dt.datetime.strftime(firstobj, '%Y%m%d%H%M%S'))+'&parameterIds=90,91,98&delimiter=comma'
+    SMN_data = pd.read_csv(url, skiprows = [1], sep=',')
+    SMN_data = SMN_data.rename(columns = {'termin' : 'time_YMDHMS', '90':'pressure_hPa', '91': 'temperature_degC', '98':'relative_humidity_percent'})
+    SMN_data['time_YMDHMS'] = pd.to_datetime(SMN_data.time_YMDHMS, format = '%Y%m%d%H%M%S')
+    return SMN_data
+
+def convert_altitude_to_pressure(input_data, firstobj, integrant):
+    p_1 = np.zeros(len(input_data))
+    p_1[0] = read_SMN(firstobj).pressure_hPa[0]
+    for i in range(1, len(input_data)):
+        p_1[i] = p_1[0]*math.exp(-np.trapz(integrant[0:i], input_data.altitude_m[0:i]))
+    
+    return p_1
+    
+
+
 ######################################## !!! ########################################
-firstdate = '20200828000000' # !! define start date + midnight/noon
-lastdate = '20200910000000' # !! define end date + midnight/noon
+firstdate = '20200721120000' # !! define start date + midnight/noon
+lastdate = '20200728120000' # !! define end date + midnight/noon
 firstobj=dt.datetime.strptime(firstdate,'%Y%m%d%H%M%S')
 lastobj=dt.datetime.strptime(lastdate,'%Y%m%d%H%M%S')
 ######################################## !!! ########################################
@@ -421,6 +496,13 @@ lon_payerne = 6.93608#, 9.12, 11.33, 9.17
 lat_payerne = 46.8220#1, 48.50, 48.15, 45.26
 
 DT = firstobj.hour
+
+INCA_archive = '/data/COALITION2/internships/nal/data/COSMO/'
+INCA_COSMO_archive ='/data/COALITION2/database/cosmo/T-TD_3D/'
+NUCAPS_archive = '/data/COALITION2/internships/nal/data/NUCAPS/save_NUCAPS'
+season_year = 'JJA_2019' 
+COSMO_std_archive   = '/data/COALITION2/internships/nal/std_files/COSMO/'+str(season_year)+'/scratch/owm/verify/upper-air/'+str(season_year)+'/COSMO-1/output_all_stations_6610'
+archive_plots = '/data/COALITION2/internships/nal/Plots/'
 
 DIFF_COMBINED_MD_temp = pd.DataFrame()
 DIFF_COMBINED_MD_temp_d = pd.DataFrame()
@@ -438,14 +520,14 @@ STD_COSMO_MD_temp_d = pd.DataFrame()
 
 exp = 1
 sigma = 5
-factor = 0.5
+factor = 1
 while firstobj != lastobj:              
     print(firstobj)
     lastobj_now = firstobj + dt.timedelta(days=1)
     ############################################################ LOAD DATA ############################################################
     ##### INCA grid
     ##########################################
-    INCA_grid = xr.open_dataset('/data/COALITION2/PicturesSatellite/results_NAL/COSMO/inca_topo_levels_hsurf_ccs4.nc')
+    INCA_grid = xr.open_dataset(INCA_archive+'inca_topo_levels_hsurf_ccs4.nc')
         
     ### coordinate at Payerne
     lon = INCA_grid.lon_1.values
@@ -469,8 +551,10 @@ while firstobj != lastobj:
     ##########################################
     ##### COSMO
     ##########################################
-    COSMO_data = xr.open_dataset('/data/COALITION2/database/cosmo/T-TD_3D/cosmo-1e_inca_'+str(dt.datetime.strftime(firstobj, '%Y%m%d'))+'06_06_00.nc') #cosmo1_inca_'+str(dt.datetime.strftime(firstobj, '%Y%m%d'))+'06_06.nc')
-          
+    time = dt.datetime.strftime(firstobj- dt.timedelta(hours=6), '%Y%m%d%H')
+    COSMO_data = xr.open_dataset(INCA_COSMO_archive+'/'+str(firstobj.year)+'/'+str(firstobj.strftime('%m'))+'/'+str(firstobj.strftime('%d'))+'/cosmo1_inca_'+str(time)+'_06.nc')
+    #COSMO_data = xr.open_dataset('/data/COALITION2/database/cosmo/T-TD_3D/cosmo-1e_inca_'+str(time)+'_06_00.nc')
+    print(COSMO_data.time.values)
     ## define dimensionsr
     n_z = COSMO_data.t_inca.values.shape[1]
     n_y = COSMO_data.t_inca.values.shape[2]
@@ -483,6 +567,10 @@ while firstobj != lastobj:
     # RADIOMETER
     ############################################################
     RM = read_HATPRO(firstobj)
+    
+    RM['temperature_degC'][RM.quality_flag == 1] = np.nan
+    RM['dew_point_degC'][RM.quality_flag == 1] = np.nan
+    
     # smooth to INCA grid
     RM = average_RS_to_INCA_grid(firstobj, lastobj_now, INCA_grid_payerne, RM, RM)[::-1]
     
@@ -506,8 +594,8 @@ while firstobj != lastobj:
     ##########################################
     ##### NUCAPS
     ##########################################
-    # read NUCAPS 
-    NUCAPS = open_NUCAPS_file('/data/COALITION2/PicturesSatellite/results_NAL/NUCAPS/save_NUCAPS/NUCAPS_Payerne_-120min_60min_3500km_Aug2020.nc')
+    # read NUCAPS
+    NUCAPS = open_NUCAPS_file(NUCAPS_archive+'/NUCAPS_Payerne_-120min_60min_3500km_Aug2020.nc')
     NUCAPS = reshape_NUCAPS(NUCAPS, 50)
     NUCAPS = NUCAPS[NUCAPS.time_YMDHMS == firstobj]
     
@@ -540,12 +628,11 @@ while firstobj != lastobj:
     #plot_in_lat_dir(STD_temp_space, np.arange(0,9,0.2), 'Distance [# grid points]', 'Altitude [m]', 'STD [K]', cm.Spectral_r, 345)
     #plot_in_lat_dir(STD_temp_d_space, np.arange(0,9,0.2), 'Distance [# grid points]', 'Altitude [m]', 'STD [K]', cm.Spectral_r, 345)
             
-     
     ############################################################ STD ABSOLUT and TOTAL ############################################################
     # COSMO
     ############################################################
     ### < temperature >
-    COSMO_std_temp = pd.read_csv('/data/COALITION2/PicturesSatellite/results_NAL/Std_files/COSMO/JJA_2019/scratch/owm/verify/upper-air/JJA_2019/COSMO-1/output_all_stations_6610/allscores.dat', ';')   
+    COSMO_std_temp = pd.read_csv(COSMO_std_archive+'/allscores.dat', ';')   
     COSMO_std_temp['altitude_m'] = metpy.calc.pressure_to_height_std(COSMO_std_temp.plevel.values/100 * units.hPa) * 1000
     COSMO_std_temp = COSMO_std_temp[COSMO_std_temp.varno == 2]
     COSMO_std_temp = COSMO_std_temp[COSMO_std_temp.scorename == 'SD']
@@ -553,23 +640,23 @@ while firstobj != lastobj:
     COSMO_std_temp['plevel'] = COSMO_std_temp['plevel']
     COSMO_std_temp = griddata(COSMO_std_temp.altitude_m.values, COSMO_std_temp.scores.values, (INCA_grid_payerne.values))
     
-    COSMO_std_temp_absolute = expand_in_space(COSMO_std_temp, n_z, n_y, n_x)
-        
-        
+    COSMO_std_temp_absolute = expand_in_space(COSMO_std_temp, n_z, n_y, n_x)   
+ 
     ### < temperature d>
-    COSMO_std_temp_d = pd.read_csv('/data/COALITION2/PicturesSatellite/results_NAL/Std_files/COSMO/JJA_2019/scratch/owm/verify/upper-air/JJA_2019/COSMO-1/output_all_stations_6610/allscores.dat', ';')
+    COSMO_std_temp_d = pd.read_csv(COSMO_std_archive+'/allscores.dat', ';')  
     COSMO_std_temp_d['altitude_m'] = metpy.calc.pressure_to_height_std(COSMO_std_temp_d.plevel.values/100 * units.hPa) * 1000
-    COSMO_std_temp_d = COSMO_std_temp_d[COSMO_std_temp_d.varno == 29]
+    COSMO_std_temp_d = COSMO_std_temp_d[COSMO_std_temp_d.varno == 59]
     COSMO_std_temp_d = COSMO_std_temp_d[COSMO_std_temp_d.scorename == 'SD']
     COSMO_std_temp_d = COSMO_std_temp_d[COSMO_std_temp_d.leadtime == 6][0:20]
     COSMO_std_temp_d['plevel'] = COSMO_std_temp_d['plevel']
-    
-    COSMO_std_temp_d_absolute = expand_in_space(COSMO_std_temp, n_z, n_y, n_x)    
+    COSMO_std_temp_d = griddata(COSMO_std_temp_d.altitude_m.values, COSMO_std_temp_d.scores.values, (INCA_grid_payerne.values))
+
+    COSMO_std_temp_d_absolute = expand_in_space(COSMO_std_temp_d, n_z, n_y, n_x)    
     
     #:::::::::::TOTAL:::::::::::
     STD_COSMO_temp_total = COSMO_std_temp_absolute 
     STD_COSMO_temp_d_total = COSMO_std_temp_d_absolute      
-        
+           
     ############################################################
     # Std in SPACE
     ############################################################
@@ -622,8 +709,8 @@ while firstobj != lastobj:
     ############################################################
     #:::::::::::ABSOLUTE:::::::::::
     # read data
-    RM_std_temp = pd.read_csv('/data/COALITION2/PicturesSatellite/results_NAL/Std_files/std_RM_temp_'+str(DT)+'.csv')
-    RM_std_temp_d = pd.read_csv('/data/COALITION2/PicturesSatellite/results_NAL/Std_files/std_RM_temp_d_'+str(DT)+'.csv')
+    RM_std_temp = factor * pd.read_csv('/data/COALITION2/PicturesSatellite/results_NAL/Std_files/std_RM_temp_'+str(DT)+'.csv')
+    RM_std_temp_d = factor * pd.read_csv('/data/COALITION2/PicturesSatellite/results_NAL/Std_files/std_RM_temp_d_'+str(DT)+'.csv')
      # expand in space 
     STD_RM_temp_absolute = expand_in_space(RM_std_temp.std_temp.values, n_z, n_y, n_x)
     STD_RM_temp_d_absolute = expand_in_space(RM_std_temp_d.std_temp_d.values, n_z, n_y, n_x)                  
@@ -672,6 +759,8 @@ while firstobj != lastobj:
     a_RADIOMETER_temp = sigma_COSMO / STD_RADIOMETER_COSMO
     a_RADIOMETER_temp[np.isnan(STD_RM_temp_total)] = 0
     
+    plot_in_lat_dir(a_RADIOMETER_temp[:, :, indexes[1,0]], np.arange(0,1.1, 0.05),'Distance [# grid points]', 'Altitude [m]', 'STD [K]', cm.Spectral_r, 640)
+
     # < temperature d >
     STD_RM_temp_d_total_1 = STD_RM_temp_d_total
     STD_RM_temp_d_total_1[np.isnan(T_d_RM)] = np.nan
@@ -685,6 +774,9 @@ while firstobj != lastobj:
     
     a_RADIOMETER_temp_d = sigma_COSMO / STD_RADIOMETER_COSMO
     a_RADIOMETER_temp_d[np.isnan(STD_RM_temp_d_total)] = 0
+    
+    plot_in_lat_dir(a_RADIOMETER_temp_d[:, :, indexes[1,0]], np.arange(0,1.1, 0.05),'Distance [# grid points]', 'Altitude [m]', 'STD [K]', cm.Spectral_r, 640)
+
     
     ############################################################ COMBINE DATASETS ###########A################################################
     T_COMBINED = np.nansum(np.stack(((a_COSMO_temp * T_COSMO) ,  (a_RADIOMETER_temp * T_RM))), axis = 0)
@@ -704,9 +796,9 @@ while firstobj != lastobj:
 
     #DIFF_NUCAPS_temp = pd.DataFrame({'DIFF' : (RS_averaged.temperature_mean - T_NUCAPS[:, indexes[0,0], indexes[1,0]]), 'altitude_m' :INCA_grid_payerne})
     
-    plot_diff(DIFF_COMBINED_temp, DIFF_COSMO_temp, DIFF_RM_temp, INCA_grid_payerne)
-    plot_diff(DIFF_COMBINED_temp_d, DIFF_COSMO_temp_d, DIFF_RM_temp_d, INCA_grid_payerne)
-
+    plot_diff_save(DIFF_COMBINED_temp.DIFF, DIFF_COSMO_temp.DIFF, DIFF_RM_temp.DIFF, INCA_grid_payerne, archive_plots+'/Plots/DIFF_temp_'+dt.datetime.strftime(firstobj, '%Y%m%d%H')+'.png')
+    plot_diff_save(DIFF_COMBINED_temp_d.DIFF, DIFF_COSMO_temp_d.DIFF, DIFF_RM_temp_d.DIFF, INCA_grid_payerne, archive_plots+'/Plots/DIFF_temp_d_'+dt.datetime.strftime(firstobj, '%Y%m%d%H')+'.png')
+ 
     DIFF_COMBINED_MD_temp = DIFF_COMBINED_MD_temp.append(DIFF_COMBINED_temp)
     DIFF_COMBINED_MD_temp_d = DIFF_COMBINED_MD_temp_d.append(DIFF_COMBINED_temp_d)
     DIFF_RM_MD_temp = DIFF_RM_MD_temp.append(DIFF_RM_temp)
@@ -717,18 +809,16 @@ while firstobj != lastobj:
     
     # std
     STD_COSMO_temp = pd.DataFrame({'STD' : np.nanstd((RS_averaged.temperature_mean.reset_index(drop=True),  T_COSMO[:, indexes[0,0], indexes[1,0]]), axis = 0), 'altitude_m' : INCA_grid_payerne})
+    STD_COSMO_temp_d = pd.DataFrame({'STD' : np.nanstd((RS_averaged.temperature_d_mean.reset_index(drop=True),  T_d_COSMO[:, indexes[0,0], indexes[1,0]]), axis = 0), 'altitude_m' : INCA_grid_payerne})
     STD_COMBINED_temp = pd.DataFrame({'STD' :np.nanstd( (RS_averaged.temperature_mean.reset_index(drop=True),  T_COMBINED[:, indexes[0,0], indexes[1,0]]), axis = 0), 'altitude_m' : INCA_grid_payerne})
+    STD_COMBINED_temp_d = pd.DataFrame({'STD' :np.nanstd( (RS_averaged.temperature_d_mean.reset_index(drop=True),  T_d_COMBINED[:, indexes[0,0], indexes[1,0]]), axis = 0), 'altitude_m' : INCA_grid_payerne})
     STD_RM_temp = pd.DataFrame({'STD' :np.nanstd( (RS_averaged.temperature_mean.reset_index(drop=True),  T_RM[:, indexes[0,0], indexes[1,0]]), axis = 0), 'altitude_m' : INCA_grid_payerne})
-
-    plot_std(STD_COMBINED_temp.STD.values, STD_COSMO_temp.STD.values,  STD_RM_temp.STD.values)
+    STD_RM_temp_d = pd.DataFrame({'STD' :np.nanstd( (RS_averaged.temperature_d_mean.reset_index(drop=True),  T_d_RM[:, indexes[0,0], indexes[1,0]]), axis = 0), 'altitude_m' : INCA_grid_payerne})
     
-    STD_COMBINED_MD_temp  = STD_COMBINED_MD_temp.append(STD_COMBINED_temp)
-    STD_RM_MD_temp = STD_RM_MD_temp.append(STD_RM_temp)
-    STD_COSMO_MD_temp = STD_COSMO_MD_temp.append(STD_COSMO_temp)
-    #STD_NUCAPS_MD = STD_NUCAPS_MD.append(STD_NUCAPS_temp)
+    plot_std_save(STD_COMBINED_temp.STD.values, STD_COSMO_temp.STD.values,  STD_RM_temp.STD.values, archive_plots+'/Plots/STD_temp_'+str(dt.datetime.strftime(firstobj, '%Y%m%d%H'))+'.png')
+    plot_std_save(STD_COMBINED_temp_d.STD.values, STD_COSMO_temp_d.STD.values,  STD_RM_temp_d.STD.values, archive_plots+'/Plots/STD_temp_d'+str(dt.datetime.strftime(firstobj, '%Y%m%d%H'))+'.png')
  
     firstobj = firstobj + dt.timedelta(days=1)
-    
     
 #:::::::::::DIFF:::::::::::
 DIFF_COMBINED_temp = DIFF_COMBINED_MD_temp.groupby('altitude_m')['DIFF'].mean().to_frame(name='mean_all').reset_index()
@@ -739,8 +829,8 @@ DIFF_RM_temp = DIFF_RM_MD_temp.groupby('altitude_m')['DIFF'].mean().to_frame(nam
 DIFF_RM_temp_d = DIFF_RM_MD_temp_d.groupby('altitude_m')['DIFF'].mean().to_frame(name='mean_all').reset_index()
 #DIFF_NUCAPS = DIFF_NUCAPS_MD.groupby('altitude_m')['DIFF'].mean().to_frame(name='mean_all').reset_index()
 
-plot_diff(DIFF_COMBINED_temp.mean_all, DIFF_COSMO_temp.mean_all, DIFF_RM_temp.mean_all,  INCA_grid_payerne)
-plot_diff(DIFF_COMBINED_temp_d.mean_all, DIFF_COSMO_temp_d.mean_all, DIFF_RM_temp_d.mean_all,  INCA_grid_payerne)
+plot_diff_save(DIFF_COMBINED_temp.mean_all, DIFF_COSMO_temp.mean_all, DIFF_RM_temp.mean_all,  INCA_grid_payerne, archive_plots+'/Plots/DIFF_temp_'+str(firstdate)+'_'+str(lastdate)+'.png')
+plot_diff_save(DIFF_COMBINED_temp_d.mean_all, DIFF_COSMO_temp_d.mean_all, DIFF_RM_temp_d.mean_all,  INCA_grid_payerne, archive_plots+'/Plots/DIFF_temp_d'+str(firstdate)+'_'+str(lastdate)+'.png')
 
 #:::::::::::STD:::::::::::
 STD_COMBINED_temp = calculate_std(DIFF_COMBINED_MD_temp)
@@ -751,9 +841,8 @@ STD_RM_temp = calculate_std(DIFF_RM_MD_temp)
 STD_RM_temp_d = calculate_std(DIFF_RM_MD_temp_d)
 
 
-plot_std(STD_COMBINED_temp, STD_COSMO_temp, STD_RM_temp)
-plot_std(STD_COMBINED_temp_d, STD_COSMO_temp_d, STD_RM_temp_d)
-
+plot_std_save(STD_COMBINED_temp, STD_COSMO_temp, STD_RM_temp,archive_plots+'STD_temp_'+str(firstdate)+'_'+str(lastdate)+'.png')
+plot_std_save(STD_COMBINED_temp_d, STD_COSMO_temp_d, STD_RM_temp_d, archive_plots+'/Plots/STD_temp_d_'+str(firstdate)+'_'+str(lastdate)+'.png')
 
 
 
