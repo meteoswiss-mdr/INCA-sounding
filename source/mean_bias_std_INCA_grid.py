@@ -4,15 +4,10 @@
 Created on Fri Jul 31 11:28:02 2020
 
 @author: nal
-"""
 
-
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Jun 11 16:49:11 2020
-
-@author: nal
+####
+calculate standard deviation of HATPRO, RALMO and NUCAPS  over a 1-yr interval 
+####
 """
 import pandas as pd
 import xarray as xr
@@ -38,11 +33,11 @@ import metpy.calc as mpcalc
 import metpy 
 from metpy.calc import pressure_to_height_std
 from scipy import spatial
+
 ############################################################################# FUNCTIONS ############################################################################# 
 def open_NUCAPS_file(NUCAPS_file):       
     ds = xr.open_dataset(NUCAPS_file, decode_times=False)  # time units are non-standard, so we dont decode them here 
     units, reference_date = ds.Time.attrs['units'].split(' since ')
-
     if units=='msec':
         ref_date = datetime.strptime(reference_date,"%Y-%m-%dT%H:%M:%SZ") # usually '1970-01-01T00:00:00Z'
         ds['datetime'] = [ -1 if np.isnan(t) else ref_date + timedelta(milliseconds=t) for t in ds.Time.data]
@@ -55,55 +50,10 @@ def convert_H2O_MR_to_Td(H2O_MR, p): # H2O_MR -> input water vapour mass mixing 
     T_d = mpcalc.dewpoint(e_1) 
     return T_d
 
-# to search an array for the nearest value 
 def find_nearest(array, value):
     array = np.asarray(array)
     idx = (np.abs(array - value)).argmin()
     return array[idx]
-
-
-
-def interpolate_RS_to_INCA_grid(firstobj, lastobj, INCA_grid, input_data_filtered, comparison_grid):
-    INCA_grid = INCA_grid.reset_index(drop=True)
-    input_grid_smoothed_all = pd.DataFrame()
-    while firstobj != lastobj:
-        nowdate = firstobj.strftime('%Y%m%d')
-        print(nowdate) 
-        input_data_time = input_data_filtered[input_data_filtered.time_YMDHMS == firstobj]
-        input_data_time = input_data_time.reset_index(drop=True)
-        if input_data_time.empty:
-            input_data_time = input_data_filtered[input_data_filtered.time_YMDHMS == firstobj - dt.timedelta(days=1)]
-            input_data_time = input_data_time.reset_index(drop=True)
-            print('now!!')
-        comparison_grid_time = comparison_grid[comparison_grid.time_YMDHMS == firstobj]
-        comparison_grid_time = comparison_grid_time.reset_index(drop=True)   
-  
-        if comparison_grid_time.empty:
-            firstobj = firstobj + dt.timedelta(days=1)
-            print('now')
-            
-        else:  
-            altitude_min = min(comparison_grid_time.altitude_m)
-            altitude_max = max(comparison_grid_time.altitude_m)
-                
-            INCA_grid_min = find_nearest(INCA_grid, altitude_min)
-            INCA_grid_max = find_nearest(INCA_grid, altitude_max)
-                
-            INCA_grid_lim = INCA_grid[(INCA_grid <= INCA_grid_max) & (INCA_grid >= INCA_grid_min)]
-            INCA_grid_lim = INCA_grid_lim.reset_index(drop=True)
-                
-            input_data = input_data_time.altitude_m.reset_index(drop=True)
-            input_temp = input_data_time.temperature_degC.reset_index(drop=True)
-            input_temp_d = input_data_time.dew_point_degC.reset_index(drop=True)
-            
-            input_temperature_interp = pd.DataFrame({'temperature_mean' : griddata(input_data.values, input_temp.values, INCA_grid_lim.values[:,0])}).reset_index(drop=True)
-            input_temperature_d_interp = pd.DataFrame({'temperature_d_mean' : griddata(input_data.values, input_temp_d.values, INCA_grid_lim.values[:,0])}).reset_index(drop=True)
-            input_interp = pd.DataFrame({'altitude_m':INCA_grid_lim.altitude_m, 'temperature_mean': input_temperature_interp.temperature_mean, 'temperature_d_mean' : input_temperature_d_interp.temperature_d_mean})            
-            input_grid_smoothed_all = input_grid_smoothed_all.append(input_interp)
-            
-            firstobj= firstobj + dt.timedelta(days=1) 
-    return input_grid_smoothed_all
- 
 
 def average_RS_to_INCA_grid(firstobj, lastobj, INCA_grid_1, input_data_filtered, comparison_grid):
     INCA_grid = INCA_grid_1[::-1].reset_index(drop=True)
@@ -155,8 +105,6 @@ def average_RS_to_INCA_grid(firstobj, lastobj, INCA_grid_1, input_data_filtered,
             firstobj= firstobj + dt.timedelta(days=1) 
     return input_grid_smoothed_all   
 
-
-
 def subtract_running_window(firstobj, lastobj, NUCAPS_smoothed_INCA_all, NUCAPS_smoothed_INCA_all_time, RS_smoothed_INCA, window_size_days):
     for i in range(len(NUCAPS_smoothed_INCA_all)):
         print(i)
@@ -189,8 +137,6 @@ def subtract_running_window(firstobj, lastobj, NUCAPS_smoothed_INCA_all, NUCAPS_
 
     return NUCAPS_smoothed_INCA_all
 
-
-# filter values with above average temperature uncertainty
 def filter_uncertainty_temp(RA_mean_temp_uncertainty, RA_smoothed_INCA_1):        
     altitude_m = RA_mean_temp_uncertainty.altitude_m
     index_list = pd.DataFrame()
@@ -214,7 +160,6 @@ def filter_uncertainty_temp(RA_mean_temp_uncertainty, RA_smoothed_INCA_1):
     RA_smoothed_INCA_1.temperature_mean.iloc[index_list_no.values] = np.nan 
     return RA_smoothed_INCA_1 , index_list, index_list_no    
     
-# filter values with above average specific humidity uncertainty 
 def filter_uncertainty_temp_d(RA_mean_temp_uncertainty, RA_smoothed_INCA_1):        
     altitude_m = RA_mean_temp_uncertainty.altitude_m
     index_list = pd.DataFrame()
@@ -238,7 +183,6 @@ def filter_uncertainty_temp_d(RA_mean_temp_uncertainty, RA_smoothed_INCA_1):
     RA_smoothed_INCA_1.temperature_d_mean.iloc[index_list_no.values] = np.nan 
     return RA_smoothed_INCA_1, index_list, index_list_no  
      
-# to calculate bias of temperature
 def calc_bias_temp(input_smoothed_INCA, RS_smoothed_INCA): 
      diff_temp = np.subtract(input_smoothed_INCA.temperature_mean.reset_index(drop=True), RS_smoothed_INCA.temperature_mean.reset_index(drop=True), axis = 1)
      diff_temp = pd.DataFrame({'diff_temp':diff_temp.values, 'altitude_m': input_smoothed_INCA.altitude_m.values})
@@ -246,7 +190,6 @@ def calc_bias_temp(input_smoothed_INCA, RS_smoothed_INCA):
      diff_temp_mean = pd.DataFrame({'diff_temp':diff_temp_mean.mean_all, 'altitude_m': diff_temp_mean.altitude_m})
      return diff_temp_mean  
 
-# to calculate bias of dew point temperature
 def calc_bias_temp_d(input_smoothed_INCA, RS_smoothed_INCA):       
      diff_temp_d = np.subtract(input_smoothed_INCA.temperature_d_mean.reset_index(drop=True), RS_smoothed_INCA.temperature_d_mean.reset_index(drop=True), axis = 1)
      diff_temp_d = pd.DataFrame({'diff_temp_d':diff_temp_d.values, 'altitude_m': input_smoothed_INCA.altitude_m})
@@ -254,8 +197,6 @@ def calc_bias_temp_d(input_smoothed_INCA, RS_smoothed_INCA):
      diff_temp_d_mean = pd.DataFrame({'diff_temp_d_mean':diff_temp_d_mean.mean_all, 'altitude_m': diff_temp_d_mean.altitude_m})  
      return diff_temp_d_mean
  
-    
-# to calculate std of temperature and dew point temperature
 def calc_std_temp(input_data_smoothed_INCA, RS_data_smoothed_INCA):   
     diff_temp = np.subtract(input_data_smoothed_INCA.temperature_mean.reset_index(drop=True), RS_data_smoothed_INCA.temperature_mean.reset_index(drop=True), axis = 1)
     diff_temp = pd.DataFrame({'diff_temp':diff_temp, 'altitude_mean': RS_data_smoothed_INCA.altitude_m.values})
@@ -288,10 +229,6 @@ def calc_std_temp(input_data_smoothed_INCA, RS_data_smoothed_INCA):
         
     return std_temp, std_temp_d, number_temp, number_temp_d
 
-
-
-
-
 ############################################################################# define time #############################################################################
 ### !! time span
 firstdate = '20190501000000'
@@ -302,15 +239,9 @@ lastobj=dt.datetime.strptime(lastdate,'%Y%m%d%H%M%S')
 lon_Payerne = 6.93608
 lat_Payerne = 46.82201
 
-### !! daytime ### (midnight: 0000, noon: 1200)
-daytime = 'midnight'
-# alternatively 'noon' possible
-if daytime == 'midnight':
-   DT = 0
-   DT_NUCAPS = 23
-else:
-   DT = 12
-   DT_NUCAPS = 11
+DT = firstobj.hour
+
+dist = 1000
    
 while firstobj != lastobj:
     print(firstobj)
@@ -319,15 +250,15 @@ while firstobj != lastobj:
     lastobj_month = lastobj # the whole year
     ##################################################################### define paths and read data ##################################################################
     ## read data
-    RS_archive   = '/data/COALITION2/PicturesSatellite/results_NAL/Radiosondes/Payerne/'
-    RA_archive   = '/data/COALITION2/PicturesSatellite/results_NAL/RALMO/Payerne/'
-    SMN_archive = '/data/COALITION2/PicturesSatellite/results_NAL/SwissMetNet/Payerne'
-    NUCAPS_archive = '/data/COALITION2/PicturesSatellite/results_NAL/NUCAPS'
-    INCA_archive = '/data/COALITION2/PicturesSatellite/results_NAL/COSMO/'
-    MEAN_PROFILES_archive = '/data/COALITION2/PicturesSatellite/results_NAL/Plots/mean_profiles'
-    BIAS_archive = '/data/COALITION2/PicturesSatellite/results_NAL/Plots/bias/'
-    STD_archive = '/data/COALITION2/PicturesSatellite/results_NAL/Plots/std/'
-    RM_archive = '/data/COALITION2/PicturesSatellite/results_NAL/Radiometer/Payerne'
+    RS_archive   = '/data/COALITION2/internships/nal/data/Radiosondes/Payerne/'
+    RA_archive   = '/data/COALITION2/internships/nal/data/RALMO/Payerne/'
+    SMN_archive = '/data/COALITION2/internships/nal/data/SwissMetNet/Payerne'
+    NUCAPS_archive = '/data/COALITION2/internships/nal/data/NUCAPS'
+    INCA_archive = '/data/COALITION2/internships/nal/data/COSMO/'
+    MEAN_PROFILES_archive = '/data/COALITION2/internships/nal/data/Plots/mean_profiles'
+    BIAS_archive = '/data/COALITION2/internships/nal/data/Plots/bias/'
+    STD_archive = '/data/COALITION2/internships/nal/data/Plots/std/'
+    RM_archive = '/data/COALITION2/internships/nal/data/Radiometer/Payerne'
     
     ## read data
     RS_data = xr.open_dataset(RS_archive+'/RS_concat.nc').to_dataframe()
@@ -339,8 +270,8 @@ while firstobj != lastobj:
     #RM_data_quality_flag = RM_data_quality_flag.reset_index(drop=True)
     #x = xr.open_dataset('/data/COALITION2/PicturesSatellite/results_NAL/Radiometer/radiometer_payerne/temperature/C00-V859_190501.CMP.TPC.NC')
     #RM_data = xr.open_dataset(RM_archive+'/radiometer_06610_concat_filtered_'+str(DT)+'.nc').to_dataframe()
-    RM_data = xr.open_dataset(RM_archive+'/RM_concat.nc').to_dataframe()
-    RM_data_quality_flag = xr.open_dataset(RM_archive+'/RM_concat_quality_flag.nc').to_dataframe()
+    RM_data = xr.open_dataset(RM_archive+'/RM_concat_new1.nc').to_dataframe()
+    #RM_data_quality_flag = xr.open_dataset(RM_archive+'/RM_concat_quality_flag.nc').to_dataframe()
     NUCAPS_data = open_NUCAPS_file(NUCAPS_archive+'/NUCAPS_Payerne_-120min_60min_3500km.nc')
     
     INCA_grid = xr.open_dataset(INCA_archive+'/inca_topo_levels_hsurf_ccs4.nc') 
@@ -424,7 +355,7 @@ while firstobj != lastobj:
     NUCAPS_data = pd.concat([p_NUCAPS, T_NUCAPS, T_d_NUCAPS, dist, datetime_NUCAPS, datetime_NUCAPS_round, skin_temp, quality_flag, H2O_MR, surf_pres, topography], axis = 1)
     NUCAPS_data = NUCAPS_data.dropna()  
     
-    NUCAPS_data = NUCAPS_data[NUCAPS_data.dist <= 50]
+    NUCAPS_data = NUCAPS_data[NUCAPS_data.dist <= dist]
     NUCAPS_data = NUCAPS_data[NUCAPS_data.pressure_hPa <= NUCAPS_data.surf_pres]
 
     ##########################################
@@ -470,43 +401,10 @@ while firstobj != lastobj:
     RM_data['dew_point_degC'] = metpy.calc.dewpoint_from_relative_humidity(RM_data.temperature_K.values * units.kelvin, RH.values * units.percent)   
  
     RM_data['time_YMDHMS'] = pd.to_datetime(RM_data.time_YMDHMS, format = '%Y%m%d%H%M%S')
-    RM_data_quality_flag['time_YMDHMS'] = pd.to_datetime(RM_data_quality_flag.time_YMDHMS, format = '%Y%m%d%H%M%S')
-    RM_data_quality_flag = RM_data_quality_flag.drop_duplicates().reset_index(drop=True)
-    
-    RM_data = RM_data.assign(quality_flag_temperature = '', quality_flag_humidity = '')
-    for i in range(0, len(RM_data_quality_flag)):
-        print(i)
-        #RM_data['quality_flag_temperature'][RM_data_quality_flag.time_YMDHMS.iloc[i] == RM_data.time_YMDHMS] = RM_data_quality_flag['5560'].iloc[i]
-        #RM_data['quality_flag_humidity'][RM_data_quality_flag.time_YMDHMS.iloc[i] == RM_data.time_YMDHMS] = RM_data_quality_flag['5561'].iloc[i]
-        RM_data['quality_flag_temperature'][RM_data_quality_flag.time_YMDHMS.iloc[i] == RM_data.time_YMDHMS] = RM_data_quality_flag['radiometer_rainflag'].iloc[i]
-        RM_data['quality_flag_humidity'][RM_data_quality_flag.time_YMDHMS.iloc[i] == RM_data.time_YMDHMS] = RM_data_quality_flag['radiometer_rainflag'].iloc[i]
         
-    RM_data['temperature_degC'][RM_data.quality_flag_temperature == 1] = np.nan
-    RM_data['dew_point_degC'][RM_data.quality_flag_humidity == 1] = np.nan
+    RM_data['temperature_degC'][RM_data.quality_flag == 1] = np.nan
+    RM_data['dew_point_degC'][RM_data.quality_flag == 1] = np.nan
     
-    ##########################################
-    ## RM: Radiometer 
-    ##########################################
-    ## add temperature in degC
-
-    #RM_data['temperature_degC'] =  RM_data.temperature_degC - 273.15
-
-    #!!!!! dewpoint from relative humidity okay? #!!!!!
-    ## add dewpoint temperature
-    #dewpoint_degC = cc.dewpoint_from_relative_humidity(RM_data.temperature_degC.values * units.degC, RM_data.relative_humidity_percent.values * units.percent) 
-    #RM_data.insert(value=dewpoint_degC,column = "dew_point_degC", loc=6)
-    #RM_data['dew_point_degC'][RA_data['specific_humidity_gkg-1']== int(10000000)] = np.nan
-    
-    # round datime to 3 min, 5 min...
-    #RM_data['time_YMDHMS'] = RM_data.time_YMDHMS.dt.round('5min').values
-    #RM_data['temperature_degC'][RM_data.rain_flag == 1] = np.nan
-    #RM_data['dew_point_degC'][RM_data.rain_flag_2 == 1] = np.nan
-
-
-    ## convert relative height to geometric height (altitude above mean sea level)
-    #RM_data.altitude_m = RM_data.altitude_m + 492
-
-
     ####################################################### FILTER TIME #################################################################################
     ## filter time span
     RS_data_filtered = RS_data[(RS_data['time_YMDHMS'] >= firstobj) & (RS_data['time_YMDHMS'] < lastobj_month)] 
@@ -779,8 +677,8 @@ while firstobj != lastobj:
     ##########################################  
     # bewteen Radiosonde and all NUCAPS
     std_temp_NUCAPS_all, std_temp_d_NUCAPS_all, number_temp_NUCAPS_all, number_temp_d_NUCAPS_all = calc_std_temp(NUCAPS_smoothed_INCA_all.reset_index(drop=True), RS_smoothed_NUCAPS_all)
-    std_temp_NUCAPS_all.to_csv('/data/COALITION2/PicturesSatellite/results_NAL/Std_files/std_NUCAPS_temp_12.csv')
-    std_temp_d_NUCAPS_all.to_csv('/data/COALITION2/PicturesSatellite/results_NAL/Std_files/std_NUCAPS_temp_d_12.csv')
+    #std_temp_NUCAPS_all.to_csv('/data/COALITION2/PicturesSatellite/results_NAL/Std_files/std_NUCAPS_temp_12.csv')
+    #std_temp_d_NUCAPS_all.to_csv('/data/COALITION2/PicturesSatellite/results_NAL/Std_files/std_NUCAPS_temp_d_12.csv')
     
     ### quality flag ###
     # minus running bias
@@ -800,10 +698,9 @@ while firstobj != lastobj:
     ##### D) RALMO: Raman lidar 
     #########################################
     std_temp_RA, std_temp_d_RA, number_temp_RA, number_temp_d_RA = calc_std_temp(RA_smoothed_INCA.reset_index(drop=True), RS_smoothed_RA)
-    std_temp_RA.to_csv('/data/COALITION2/PicturesSatellite/results_NAL/Std_files/std_RA_temp_00_nov_may.csv')
+    #std_temp_RA.to_csv('/data/COALITION2/PicturesSatellite/results_NAL/Std_files/std_RA_temp_00_nov_may.csv')
     #std_temp_d_RA.to_csv('/data/COALITION2/PicturesSatellite/results_NAL/Std_files/std_RA_temp_d_12.csv')
     #std_temp_RA_korr_unc_abs, std_temp_d_RA_korr_unc_abs, number_temp_RA_korr_unc_abs, number_temp_d_RA_korr_unc_abs = calc_std_temp(RA_smoothed_INCA_korr_unc_temp_abs, RS_smoothed_RA_korr_unc_abs_temp)
-    
     #std_temp_RA_korr_unc_rel, std_temp_d_RA_korr_unc_rel, number_temp_RA_korr_unc_rel, number_temp_d_RA_korr_unc_rel = calc_std_temp(RA_smoothed_INCA_korr_unc_temp_rel, RS_smoothed_RA_korr_unc_rel_temp)
   
    
@@ -812,97 +709,82 @@ while firstobj != lastobj:
     ## E) RM: Radiometer 
     ##########################################
     std_temp_RM, std_temp_d_RM, number_temp_RM, number_temp_d_RM = calc_std_temp(RM_smoothed_INCA.reset_index(drop=True), RS_smoothed_RM)
-    std_temp_RM.to_csv('/data/COALITION2/PicturesSatellite/results_NAL/Std_files/std_RM_temp_0.csv')
-    std_temp_d_RM.to_csv('/data/COALITION2/PicturesSatellite/results_NAL/Std_files/std_RM_temp_d_0.csv')
+    #std_temp_RM.to_csv('/data/COALITION2/PicturesSatellite/results_NAL/Std_files/std_RM_temp_0.csv')
+    #std_temp_d_RM.to_csv('/data/COALITION2/PicturesSatellite/results_NAL/Std_files/std_RM_temp_d_0.csv')
 
 
 
     ###################################################### PLOT MEAN PROFILE, BIAS AND STD ###################################################################################### 
     ### mean profile ###
     fig, ax = plt.subplots(figsize = (5,12))
-    
+        
     ##########################################
     ##### B) RS: Radiosonde - BLUEISH
     ########################################## 
     # no smoothing 
-    #ax.plot(RS_original_mean_temp.mean_all, RS_original_mean_temp.altitude_m, color = 'navy', label = 'original RS T', zorder = 1)
-    #ax.plot(RS_original_mean_temp_d.mean_all, RS_original_mean_temp_d.altitude_m, color = 'navy', label = 'original RS Td', zorder = 1)
-
-    # all times
-    #ax.plot(RS_smoothed_all_mean_temp.mean_all,  RS_smoothed_all_mean_temp.altitude_m, color = 'aqua',linewidth = 2,  label = 'smoothed RS Td all', zorder = 1)
-    #ax.plot(RS_smoothed_all_mean_temp_d.mean_all,  RS_smoothed_all_mean_temp_d.altitude_m, color = 'aqua',linewidth = 2,  label = 'smoothed RS Td all', zorder = 1)
+    ax.plot(RS_original_mean_temp.mean_all, RS_original_mean_temp.altitude_m, color = 'navy', label = 'original RS T', zorder = 1)
+    ax.plot(RS_original_mean_temp_d.mean_all, RS_original_mean_temp_d.altitude_m, color = 'navy', label = 'original RS Td', zorder = 1)
     
+    # all times
+    ax.plot(RS_smoothed_all_mean_temp.mean_all,  RS_smoothed_all_mean_temp.altitude_m, color = 'aqua',linewidth = 2,  label = 'smoothed RS Td all', zorder = 1)
+    ax.plot(RS_smoothed_all_mean_temp_d.mean_all,  RS_smoothed_all_mean_temp_d.altitude_m, color = 'aqua',linewidth = 2,  label = 'smoothed RS Td all', zorder = 1)
+        
     ##########################################
     ##### C) NUCAPS: Satellite data - GREENISH
     ########################################## 
     # all
     ax.plot(RS_smoothed_NUCAPS_mean_temp_all.mean_all,  RS_smoothed_NUCAPS_mean_temp_all.altitude_m, color = 'aqua',linewidth = 2,  label = 'RS Td, all NUCAPS', zorder = 1)
     ax.plot(RS_smoothed_NUCAPS_mean_temp_d_all.mean_all,  RS_smoothed_NUCAPS_mean_temp_d_all.altitude_m, color = 'aqua',linewidth = 2,  label = 'RS Td, all NUCAPS', zorder = 1)
-
+    
     ax.plot(NUCAPS_smoothed_INCA_mean_temp_all.mean_all, NUCAPS_smoothed_INCA_mean_temp_all.altitude_m, color = 'magenta',linewidth = 2,  label = 'all NUCAPS, T', zorder = 1)
     ax.plot(NUCAPS_smoothed_INCA_mean_temp_d_all.mean_all, NUCAPS_smoothed_INCA_mean_temp_d_all.altitude_m, color = 'magenta',linewidth = 2,  label = 'all NUCAPS, Td', zorder = 1)
-
+    
     #ax.plot(NUCAPS_smoothed_INCA_mean_temp_all_min_bias_run.mean_all, NUCAPS_smoothed_INCA_mean_temp_all_min_bias_run.altitude_m, color = 'gold',linewidth = 2,  label = 'all NUCAPS T, removed bias', zorder = 1)
     #ax.plot(NUCAPS_smoothed_INCA_mean_temp_d_all_min_bias_run.mean_all, NUCAPS_smoothed_INCA_mean_temp_d_all_min_bias_run.altitude_m, color = 'gold',linewidth = 2,  label = 'all NUCAPS Td, removed bias', zorder = 1)
-    
+        
     # times with quality flag 0
     ax.plot(RS_smoothed_NUCAPS_mean_temp_0.mean_all,  RS_smoothed_NUCAPS_mean_temp_0.altitude_m, color = 'aqua',linewidth = 2,  label = 'RS T, NUCAPS 0', zorder = 1)
     ax.plot(RS_smoothed_NUCAPS_mean_temp_d_0.mean_all,  RS_smoothed_NUCAPS_mean_temp_d_0.altitude_m, color = 'aqua',linewidth = 2,  label = 'RS Td, NUCAPS 0', zorder = 1)
-    
+        
     ax.plot(NUCAPS_smoothed_INCA_mean_temp_0.mean_all, NUCAPS_smoothed_INCA_mean_temp_0.altitude_m, color = 'green',linewidth = 2,  label = 'NUCAPS 0 T', zorder = 1)
     ax.plot(NUCAPS_smoothed_INCA_mean_temp_d_0.mean_all, NUCAPS_smoothed_INCA_mean_temp_0.altitude_m, color = 'green',linewidth = 2,  label = 'NUCAPS 0 Td', zorder = 1)
-
+    
     ## times with quality flag 1
-    ax.plot(RS_smoothed_NUCAPS_mean_temp_1.mean_all,  RS_smoothed_NUCAPS_mean_temp_1.altitude_m, color = 'aqua',linewidth = 2,  label = 'RS T, NUCAPS 1', zorder = 1)
-    ax.plot(RS_smoothed_NUCAPS_mean_temp_d_1.mean_all,  RS_smoothed_NUCAPS_mean_temp_d_1.altitude_m, color = 'aqua',linewidth = 2,  label = 'RS Td, NUCAPS 1', zorder = 1)
-    
-    ax.plot(NUCAPS_smoothed_INCA_mean_temp_1.mean_all, NUCAPS_smoothed_INCA_mean_temp_1.altitude_m, color = 'lawngreen',linewidth = 2,  label = 'NUCAPS 0, T', zorder = 1)
-    ax.plot(NUCAPS_smoothed_INCA_mean_temp_d_1.mean_all, NUCAPS_smoothed_INCA_mean_temp_1.altitude_m, color = 'lawngreen',linewidth = 2,  label = 'NUCAPS 0, Td', zorder = 1)
-    
+    #ax.plot(RS_smoothed_NUCAPS_mean_temp_1.mean_all,  RS_smoothed_NUCAPS_mean_temp_1.altitude_m, color = 'aqua',linewidth = 2,  label = 'RS T, NUCAPS 1', zorder = 1)
+    #ax.plot(RS_smoothed_NUCAPS_mean_temp_d_1.mean_all,  RS_smoothed_NUCAPS_mean_temp_d_1.altitude_m, color = 'aqua',linewidth = 2,  label = 'RS Td, NUCAPS 1', zorder = 1)
+        
+    #ax.plot(NUCAPS_smoothed_INCA_mean_temp_1.mean_all, NUCAPS_smoothed_INCA_mean_temp_1.altitude_m, color = 'lawngreen',linewidth = 2,  label = 'NUCAPS 0, T', zorder = 1)
+    #ax.plot(NUCAPS_smoothed_INCA_mean_temp_d_1.mean_all, NUCAPS_smoothed_INCA_mean_temp_1.altitude_m, color = 'lawngreen',linewidth = 2,  label = 'NUCAPS 0, Td', zorder = 1)
+        
     ## times with quality flag 9
-    ax.plot(RS_smoothed_NUCAPS_mean_temp_9.mean_all,  RS_smoothed_NUCAPS_mean_temp_9.altitude_m, color = 'aqua',linewidth = 2,  label = 'RS T, NUCAPS 9', zorder = 1)
-    ax.plot(RS_smoothed_NUCAPS_mean_temp_d_9.mean_all, RS_smoothed_NUCAPS_mean_temp_d_9.altitude_m, color = 'aqua',linewidth = 2,  label = 'RS, Td NUCAPS 9', zorder = 1)
-    
-    ax.plot(NUCAPS_smoothed_INCA_mean_temp_9.mean_all, NUCAPS_smoothed_INCA_mean_temp_9.altitude_m, color = 'lightgreen',linewidth = 2,  label = 'NUCAPS 9 T', zorder = 1)
-    ax.plot(NUCAPS_smoothed_INCA_mean_temp_d_9.mean_all, NUCAPS_smoothed_INCA_mean_temp_9.altitude_m, color = 'lightgreen',linewidth = 2,  label = 'NUCAPS 9 Td', zorder = 1)
-            
-    ##########################################
-    ##### D) RALMO: Raman lidar - REDISH
-    #########################################
-    #ax.plot(RA_original_smoothed_INCA_mean_temp.mean_all[:-1], RA_original_smoothed_INCA_mean_temp.altitude_m[:-1], color = 'magenta', linewidth = 4,  label = 'original RA T', zorder = 1)    
-    #ax.plot(RA_original_smoothed_INCA_mean_temp_d.mean_all[:-1], RA_original_smoothed_INCA_mean_temp_d.altitude_m[:-1], color = 'magenta',linewidth = 4,  label = 'original RA Td', zorder = 1)  
-    
-    ax.plot(RS_smoothed_RA_mean_temp.mean_all[:-1],  RS_smoothed_RA_mean_temp.altitude_m[:-1], color = 'aqua',linewidth = 2,  label = 'smoothed RS Td, RA', zorder = 1)
-    ax.plot(RS_smoothed_RA_mean_temp_d.mean_all[:-1],  RS_smoothed_RA_mean_temp_d.altitude_m[:-1], color = 'aqua',linewidth = 2,  label = 'smoothed RS Td, RA', zorder = 1)
-    
-    #ax.plot(RA_smoothed_INCA_mean_temp.mean_all, RA_smoothed_INCA_mean_temp.altitude_m, color = 'maroon',linewidth = 2,  label = 'smoothed RA Td', zorder = 1000)
-    #ax.plot(RA_smoothed_INCA_mean_temp_d.mean_all, RA_smoothed_INCA_mean_temp.altitude_m, color = 'maroon',linewidth = 2,  label = 'smoothed RA Td', zorder = 10000)
-
-    #ax.plot(RA_smoothed_INCA_mean_temp_korr_unc_abs.mean_all, RA_smoothed_INCA_mean_temp_korr_unc_abs.altitude_m, color = 'orangered',linewidth = 2,  label = 'RA T abs unc', zorder = 1)
-    #ax.plot(RA_smoothed_INCA_mean_temp_d_korr_unc_abs.mean_all, RA_smoothed_INCA_mean_temp_d_korr_unc_abs.altitude_m, color = 'orangered',linewidth = 2,  label = 'RA Td abs unc', zorder = 1)
-    
+    #ax.plot(RS_smoothed_NUCAPS_mean_temp_9.mean_all,  RS_smoothed_NUCAPS_mean_temp_9.altitude_m, color = 'aqua',linewidth = 2,  label = 'RS T, NUCAPS 9', zorder = 1)
+    #ax.plot(RS_smoothed_NUCAPS_mean_temp_d_9.mean_all, RS_smoothed_NUCAPS_mean_temp_d_9.altitude_m, color = 'aqua',linewidth = 2,  label = 'RS, Td NUCAPS 9', zorder = 1)
+        
+    #ax.plot(NUCAPS_smoothed_INCA_mean_temp_9.mean_all, NUCAPS_smoothed_INCA_mean_temp_9.altitude_m, color = 'lightgreen',linewidth = 2,  label = 'NUCAPS 9 T', zorder = 1)
+    #ax.plot(NUCAPS_smoothed_INCA_mean_temp_d_9.mean_all, NUCAPS_smoothed_INCA_mean_temp_9.altitude_m, color = 'lightgreen',linewidth = 2,  label = 'NUCAPS 9 Td', zorder = 1)        
+       
     #ax.plot(RA_smoothed_INCA_mean_temp_korr_unc_rel.mean_all, RA_smoothed_INCA_mean_temp_korr_unc_rel.altitude_m, color = 'magenta',linewidth = 2,  label = 'RA T rel unc', zorder = 1)
     #ax.plot(RA_smoothed_INCA_mean_temp_d_korr_unc_rel.mean_all, RA_smoothed_INCA_mean_temp_d_korr_unc_rel.altitude_m, color = 'magenta',linewidth = 2,  label = 'RA T rel unc', zorder = 1)
-    
+        
     #ax.plot(RA_mean_temp_uncertainty.mean_all, RA_mean_temp_uncertainty.altitude_m, color = 'green',linewidth = 2,  label = 'RA T uncertainty', zorder = 1)
     #ax.plot(RA_mean_temp_d_uncertainty.mean_all, RA_mean_temp_d_uncertainty.altitude_m, color = 'magenta',linewidth = 2,  label = 'RA Td smoothed RA', zorder = 1)
-     
+         
     #ax.plot(RA_smoothed_INCA_mean_temp_filunc.mean_all, RA_smoothed_INCA_mean_temp_filunc.altitude_m, color = 'green',linewidth = 2,  label = 'smoothed RA Td', zorder = 1)
     #ax.plot(RA_smoothed_INCA_mean_temp_d_filunc.mean_all, RA_smoothed_INCA_mean_temp_filunc.altitude_m, color = 'green',linewidth = 2,  label = 'smoothed RA Td', zorder = 1)
-    
+        
     ## uncertainty
     #ax.fill_betweenx(RA_mean_temp_uncertainty.altitude_m,(RA_smoothed_INCA_mean_temp.mean_all + RA_mean_temp_uncertainty.mean_all), (RA_smoothed_INCA_mean_temp.mean_all - RA_mean_temp_uncertainty.mean_all),  alpha = 0.2, color = 'orangered', label = 'mean RA T', zorder = 2)
     #ax.fill_betweenx(RA_mean_temp_d_uncertainty.altitude_m,(RA_smoothed_INCA_mean_temp_d.mean_all + RA_mean_temp_d_uncertainty.mean_all), (RA_smoothed_INCA_mean_temp_d.mean_all - RA_mean_temp_d_uncertainty.mean_all), alpha = 0.4, color = 'navy', label = 'mean RA Td', linestyle = '--',zorder = 3)
-
+    
     ##########################################
     ## E) RM: Radiometer - orangeish
     ##########################################
     #ax.plot(RM_smoothed_INCA_mean_temp_original.mean_all, RM_smoothed_INCA_mean_temp_original.altitude_m, color = 'orangered',linewidth = 2,  label = 'original RM Td', zorder = 1)
     #ax.plot(RM_smoothed_INCA_mean_temp_d.mean_all, RM_smoothed_INCA_mean_temp.altitude_m, color = 'orangered',linewidth = 2,  label = 'original RM Td', zorder = 1) 
-    
+        
     #ax.plot(RS_smoothed_RM_mean_temp.mean_all[:-1],  RS_smoothed_RM_mean_temp.altitude_m[:-1], color = 'aqua',linewidth = 2,  label = 'smoothed RS Td, RA', zorder = 1)
     #ax.plot(RS_smoothed_RM_mean_temp_d.mean_all[:-1],  RS_smoothed_RM_mean_temp_d.altitude_m[:-1], color = 'aqua',linewidth = 2,  label = 'smoothed RS Td, RA', zorder = 1)
-    
+        
     #ax.plot(RM_smoothed_INCA_mean_temp.mean_all, RM_smoothed_INCA_mean_temp.altitude_m, color = 'bisque',linewidth = 2,  label = 'smoothed RM Td', zorder = 1)
     #ax.plot(RM_smoothed_INCA_mean_temp_d.mean_all, RM_smoothed_INCA_mean_temp.altitude_m, color = 'bisque',linewidth = 2,  label = 'smoothed RM Td', zorder = 1)
     
@@ -917,22 +799,23 @@ while firstobj != lastobj:
     ax.set_xlim(-25,20)
     #fig.savefig(MEAN_PROFILES_archive+'/MEANPROFILES_NUCAPS_1000m_0000_'+firstobj.strftime('%Y%m'))
     
-   
+
+
 
     ### BIAS ###
     ##########################################
     fig = plt.figure(figsize = (12,18))
     ax1 = fig.add_axes([0.1,0.1,0.4,0.8])
     ax2 = fig.add_axes([0.5,0.1,0.2,0.8])
-
+       
     ax1.set_ylabel('Altitude [m]', fontsize = 30)
     ax1.set_xlabel('Temperature [°C]', fontsize = 30)
     ax1.tick_params(labelsize = 30)
     ax1.set_title('Bias', fontsize = 30)
     ax1.set_ylim(0, 13000)
-    #ax1.set_xlim(-2, 2)
+    ax1.set_xlim(-4, 4.1)
     ax1.set_yticks(np.arange(0,13000, 1000))
-    #ax1.set_xticks(np.arange(-2, 2, 1))
+    ax1.set_xticks(np.arange(-4, 4.1, 2))
     ax1.axvspan(-2, -1, alpha=0.5, color='grey', zorder = 0)
     ax1.axvspan(1, 2, alpha=0.5, color='grey', zorder = 0)
     ax1.axvspan(-1, 1, alpha=0.5, color='lightgrey', zorder = 0)
@@ -942,155 +825,111 @@ while firstobj != lastobj:
     ax1.vlines(-2,0,13000, color = 'darkslategrey', linestyle = "--", linewidth = 3)
     ax1.vlines(2,0,13000, color = 'darkslategrey', linestyle = "--", linewidth = 3)
     ax1.grid()  
-
+    
     ax2.set_xlabel('Absolute #', fontsize = 30)
     ax2.tick_params(labelsize = 30)
     ax2.set_title('# of measurements', fontsize = 30)
-    ax2.set_yticks(np.arange(0,13000, 1000))
-    #ax2.set_xticks(np.arange(0, 26, 5))
-    ax2.set_yticklabels(ax2.yaxis.get_ticklabels()[::4])
-    ax2.yaxis.tick_right()
     ax2.set_ylim(0, 13000)
-    #ax2.set_xlim(0, 30, 5)
+    ax2.set_yticks([])
+    ax2.set_xlim(0, 450)
     ax2.grid()  
-
+    
     ##########################################
     ##### C) NUCAPS: Satellite data - GREENISH
     ########################################## 
     # all
-    ax1.plot(diff_temp_mean_NUCAPS_all.diff_temp, diff_temp_mean_NUCAPS_all.altitude_m, color = 'darkslategrey', linewidth = 6, label = 'T NUCAPS all', zorder = 0)
-    ax1.plot(diff_temp_d_mean_NUCAPS_all.diff_temp_d_mean, diff_temp_d_mean_NUCAPS_all.altitude_m, color = 'darkslategrey', linewidth = 6, label = 'Td NUCAPS all', linestyle = '--', zorder = 1)
-
+    ax1.plot(diff_temp_mean_NUCAPS_all.diff_temp, diff_temp_mean_NUCAPS_all.altitude_m, color = 'darkslategrey', linewidth = 4, label = 'T NUCAPS all', zorder = 0)
+    ax1.plot(diff_temp_d_mean_NUCAPS_all.diff_temp_d_mean, diff_temp_d_mean_NUCAPS_all.altitude_m, color = 'darkslategrey', linewidth = 4, label = 'Td NUCAPS all', linestyle = '--', zorder = 1)
+     
     ### quality flag ###    
     # times with quality flag 0
-    ax1.plot(diff_temp_mean_NUCAPS_0.diff_temp, diff_temp_mean_NUCAPS_0.altitude_m, color = 'red', linewidth = 3, label = 'T NUCAPS 0', zorder = 0)
-    ax1.plot(diff_temp_d_mean_NUCAPS_0.diff_temp_d_mean, diff_temp_d_mean_NUCAPS_0.altitude_m, color = 'red', linewidth = 3, label = 'Td NUCAPS 0', linestyle = '--', zorder = 1)
+    ax1.plot(diff_temp_mean_NUCAPS_0.diff_temp, diff_temp_mean_NUCAPS_0.altitude_m, color = 'green', linewidth = 3, label = 'T NUCAPS 0', zorder = 0)
+    ax1.plot(diff_temp_d_mean_NUCAPS_0.diff_temp_d_mean, diff_temp_d_mean_NUCAPS_0.altitude_m, color = 'green', linewidth = 3, label = 'Td NUCAPS 0', linestyle = '--', zorder = 1)
 
     # times with quality flag 1
-    ax1.plot(diff_temp_mean_NUCAPS_1.diff_temp, diff_temp_mean_NUCAPS_1.altitude_m, color = 'orange', linewidth = 3, label = 'T NUCAPS 1', zorder = 0)
-    ax1.plot(diff_temp_d_mean_NUCAPS_1.diff_temp_d_mean, diff_temp_d_mean_NUCAPS_1.altitude_m, color = 'orange', linewidth = 3, label = 'Td NUCAPS 1', linestyle = '--', zorder = 1)
-
+    ax1.plot(diff_temp_mean_NUCAPS_1.diff_temp, diff_temp_mean_NUCAPS_1.altitude_m, color = 'lawngreen', linewidth = 3, label = 'T NUCAPS 1', zorder = 0)
+    ax1.plot(diff_temp_d_mean_NUCAPS_1.diff_temp_d_mean, diff_temp_d_mean_NUCAPS_1.altitude_m, color = 'lawngreen', linewidth = 3, label = 'Td NUCAPS 1', linestyle = '--', zorder = 1)
+    
     # times with quality flag 9
-    ax1.plot(diff_temp_mean_NUCAPS_9.diff_temp, diff_temp_mean_NUCAPS_9.altitude_m, color = 'navy', linewidth = 2, label = 'T NUCAPS 9', zorder = 0)
-    ax1.plot(diff_temp_d_mean_NUCAPS_9.diff_temp_d_mean, diff_temp_d_mean_NUCAPS_9.altitude_m, color = 'navy', linewidth = 2, label = 'Td NUCAPS 9', linestyle = '--', zorder = 1)
-
+    #ax1.plot(diff_temp_mean_NUCAPS_9.diff_temp, diff_temp_mean_NUCAPS_9.altitude_m, color = 'lightgreen', linewidth = 2, label = 'T NUCAPS 9', zorder = 0)
+    #ax1.plot(diff_temp_d_mean_NUCAPS_9.diff_temp_d_mean, diff_temp_d_mean_NUCAPS_9.altitude_m, color = 'lightgreen', linewidth = 2, label = 'Td NUCAPS 9', linestyle = '--', zorder = 1)
+    
     #####
     # all
     ax2.plot(number_temp_NUCAPS_all.number, number_temp_NUCAPS_all.altitude_m, color = 'darkslategrey', linewidth = 6 , zorder = 0)
     ax2.plot(number_temp_d_NUCAPS_all.number, number_temp_NUCAPS_all.altitude_m, color = 'darkslategrey', linewidth = 6, linestyle = '--', zorder = 1)
-
+    
     ### quality flag ###    
     # times with quality flag 0
-    ax2.plot(number_temp_NUCAPS_0.number, number_temp_NUCAPS_0.altitude_m, color = 'red', linewidth = 2,  zorder = 0)
-    ax2.plot(number_temp_d_NUCAPS_0.number, number_temp_NUCAPS_0.altitude_m, color = 'red', linewidth = 2, linestyle = '--', zorder = 1)
-
+    ax2.plot(number_temp_NUCAPS_0.number, number_temp_NUCAPS_0.altitude_m, color = 'green', linewidth = 2,  zorder = 0)
+    ax2.plot(number_temp_d_NUCAPS_0.number, number_temp_NUCAPS_0.altitude_m, color = 'green', linewidth = 2, linestyle = '--', zorder = 1)
+    
     # times with quality flag 1
-    ax2.plot(number_temp_NUCAPS_1.number, number_temp_NUCAPS_1.altitude_m, color = 'orange', linewidth = 2, zorder = 0)
-    ax2.plot(number_temp_d_NUCAPS_1.number, number_temp_NUCAPS_1.altitude_m, color = 'orange', linewidth = 2, linestyle = '--', zorder = 1)
-
+    ax2.plot(number_temp_NUCAPS_1.number, number_temp_NUCAPS_1.altitude_m, color = 'lawngreen', linewidth = 2, zorder = 0)
+    ax2.plot(number_temp_d_NUCAPS_1.number, number_temp_NUCAPS_1.altitude_m, color = 'lawngreen', linewidth = 2, linestyle = '--', zorder = 1)
+    
     # times with quality flag 9
-    ax2.plot(number_temp_NUCAPS_9.number, number_temp_NUCAPS_9.altitude_m, color = 'navy', linewidth = 2,  zorder = 0)
-    ax2.plot(number_temp_d_NUCAPS_9.number, number_temp_NUCAPS_9.altitude_m, color = 'navy', linewidth = 2, linestyle = '--', zorder = 1)
-
-    #########################################
-
-    ##### D) RALMO: Raman lidar - REDISH
-
-    #########################################
-
-    #ax1.plot(diff_temp_mean_RA.diff_temp, diff_temp_mean_RA.altitude_m, color = 'maroon', linewidth = 3, label = 'T RA', zorder = 0)
-
-    #ax1.plot(diff_temp_d_mean_RA.diff_temp_d_mean, diff_temp_d_mean_RA.altitude_m, color = 'maroon', linewidth = 3, linestyle = '--',label = 'Td RA', zorder = 1)
-
+    #ax2.plot(number_temp_NUCAPS_9.number, number_temp_NUCAPS_9.altitude_m, color = 'lightgreen', linewidth = 2,  zorder = 0)
+    #ax2.plot(number_temp_d_NUCAPS_9.number, number_temp_NUCAPS_9.altitude_m, color = 'lightgreen', linewidth = 2, linestyle = '--', zorder = 1)
     
-
+    
+    ##########################################
+    #### D) RALMO: Raman lidar - REDISH
+    #########################################
+    ax1.plot(diff_temp_mean_RA.diff_temp, diff_temp_mean_RA.altitude_m, color = 'maroon', linewidth = 3, label = 'T RA', zorder = 0)
+    ax1.plot(diff_temp_d_mean_RA.diff_temp_d_mean, diff_temp_d_mean_RA.altitude_m, color = 'maroon', linewidth = 3, linestyle = '--',label = 'Td RA', zorder = 1)
+    
     #ax1.plot(diff_temp_mean_RA_korr_unc_abs.diff_temp, diff_temp_mean_RA_korr_unc_abs.altitude_m, color = 'orangered', linewidth = 3, label = 'T korr unc abs', zorder = 1000)
-
     #ax1.plot(diff_temp_d_mean_RA_korr_unc_abs.diff_temp_d_mean, diff_temp_d_mean_RA_korr_unc_abs.altitude_m, color = 'orangered', linestyle = '--',linewidth = 3, label = 'Td korr unc abs', zorder = 1)
-
     
-
-    #ax1.plot(diff_temp_mean_RA_korr_unc_rel.diff_temp, diff_temp_mean_RA_korr_unc_rel.altitude_m, color = 'magenta', linewidth = 3, label = 'T korr unc rel', zorder = 0)
-
+     #ax1.plot(diff_temp_mean_RA_korr_unc_rel.diff_temp, diff_temp_mean_RA_korr_unc_rel.altitude_m, color = 'magenta', linewidth = 3, label = 'T korr unc rel', zorder = 0)
     #ax1.plot(diff_temp_d_mean_RA_korr_unc_rel.diff_temp_d_mean, diff_temp_d_mean_RA_korr_unc_rel.altitude_m, color = 'magenta', linestyle = '--',linewidth = 3, label = 'Td korr unc rel', zorder = 1)
-
     
-
     # uncertainty
-
     #ax1.plot(RA_mean_temp_uncertainty.mean_all, RA_mean_temp_uncertainty.altitude_m, color = 'magenta', linewidth = 2, label = 'T uncertainty', zorder = 0)
-
     #ax1.plot(np.abs(RA_mean_temp_d_uncertainty.mean_all), RA_mean_temp_d_uncertainty.altitude_m, color = 'aqua', linewidth = 2, label = 'Td uncertainty', zorder = 1)
-
     
-
     #####
-
-    #ax2.plot(number_temp_RA.number, number_temp_RA.altitude_m, color = 'maroon', linewidth = 3, zorder = 0)
-
-    #ax2.plot(number_temp_d_RA.number, number_temp_d_RA.altitude_m, color = 'maroon', linewidth = 3,   zorder = 1)
-
+    ax2.plot(number_temp_RA.number, number_temp_RA.altitude_m, color = 'maroon', linewidth = 3, zorder = 0)
+    ax2.plot(number_temp_d_RA.number, number_temp_d_RA.altitude_m, color = 'maroon', linewidth = 3,   zorder = 1)
     
-
     #ax2.plot(number_temp_RA_korr_unc_abs.number, number_temp_RA_korr_unc_abs.altitude_m, color = 'orangered', linewidth = 3,  zorder = 0)
-
     #ax2.plot(number_temp_d_RA_korr_unc_abs.number, number_temp_d_RA_korr_unc_abs.altitude_m, color = 'orangered', linewidth = 3, linestyle = '--', zorder = 1)
-
     
-
     #ax2.plot(number_temp_RA_korr_unc_rel.number, number_temp_RA_korr_unc_rel.altitude_m, color = 'magenta', linewidth = 3,  zorder = 0)
-
     #ax2.plot(number_temp_d_RA_korr_unc_rel.number, number_temp_d_RA_korr_unc_rel.altitude_m, color = 'magenta', linewidth = 3, linestyle = '--', zorder = 1)
-
     
-
     ##########################################
-
     ## E) RM: Radiometer  - BLACKISH
-
     ##########################################
-
     ax1.plot(diff_temp_mean_RM.diff_temp, diff_temp_mean_RM.altitude_m, color = 'navy', linewidth = 3, label = 'T RM', zorder = 0)
-
     ax1.plot(diff_temp_d_mean_RM.diff_temp_d_mean, diff_temp_d_mean_RM.altitude_m, color = 'navy', linewidth = 3, linestyle = '--',label = 'Td RM', zorder = 1)
-
     
-
     #####
-
     ax2.plot(number_temp_RM.number, number_temp_RM.altitude_m, color = 'navy', linewidth = 2,  zorder = 0)
-
     ax2.plot(number_temp_d_RM.number, number_temp_RM.altitude_m, color = 'navy', linewidth = 2, linestyle = 'dotted', zorder = 1)
-
     
-
     
-
     #fig.savefig(BIAS_archive + '/BIAS_NUCAPS_1000m_1200_ALL', dpi=300, bbox_inches = "tight")
-
     ax1.legend(fontsize = 25)
 
     
-    import matplotlib
-    matplotlib.use("agg")
-    import matplotlib.pyplot as plt
-    import numpy as np
-    import matplotlib as mpl
-    mpl.rcParams['axes.linewidth'] = 6 #set the value globally
+    
+    
     ### STD ###
     ##########################################
-    fig = plt.figure(figsize = (18,18))
+    fig = plt.figure(figsize = (12,18))
     ax1 = fig.add_axes([0.1,0.1,0.4,0.8])
     ax2 = fig.add_axes([0.5,0.1,0.2,0.8])
-   
-    ax1.set_ylabel('Altitude [m]', fontsize = 30)
-    ax1.set_xlabel('RSME [K]', fontsize = 30)
+    
+    #ax1.set_ylabel('Altitude [m]', fontsize = 30)
+    ax1.set_xlabel('Temperature [°C]', fontsize = 30)
     ax1.tick_params(labelsize = 30)
-    ax1.set_title('RSME', fontsize = 30)
+    ax1.set_title('Std', fontsize = 30)
     ax1.set_ylim(0, 13000)
-    ax1.set_xlim(0, 11)
+    ax1.set_xlim(0, 8)
     ax1.set_yticks(np.arange(0,13000, 1000))
-    ax1.set_xticks(np.arange(0, 11, 2))
+    ax1.set_xticks(np.arange(0, 8, 2))
     ax1.axvspan(0, 1, alpha=0.5, color='dimgrey', zorder = 0)
     ax1.axvspan(1, 2, alpha=0.5, color='grey', zorder = 0)
     ax1.axvspan(2, 6, alpha=0.5, color='lightgrey', zorder = 0)
@@ -1098,66 +937,99 @@ while firstobj != lastobj:
     
     ax2.set_xlabel('Absolute #', fontsize = 30)
     ax2.tick_params(labelsize = 30)
-    ax2.set_title('# measurements', fontsize = 30)
+    ax2.set_title('# of measurements', fontsize = 30)
     ax2.set_yticks(np.arange(0,13000, 1000))
-    ax2.set_yticklabels(ax2.yaxis.get_ticklabels()[::4])
+    #ax2.set_yticklabels(ax2.yaxis.get_ticklabels()[::4])
     ax2.yaxis.tick_right()
     ax2.set_ylim(0, 13000)
-    ax2.set_xlim(0,350)
+    ax2.set_xlim(0,450)
     ax2.set_xticks(np.arange(0,450,200))
     ax2.grid()
-    mpl.rcParams['axes.linewidth'] = 6 #set the value globally
-      ##########################################
-
+     
+    ##########################################
     ##### C) NUCAPS: Satellite data #####
-
     ########################################## 
-
+    # all
+    ax1.plot(std_temp_NUCAPS_all.std_temp, std_temp_NUCAPS_all.altitude_m, color = 'darkslategrey', linewidth = 6, label = 'T NUCAPS all', zorder = 0)
+    ax1.plot(std_temp_d_NUCAPS_all.std_temp_d, std_temp_NUCAPS_all.altitude_m, color = 'darkslategrey', linewidth = 6, label = 'Td NUCAPS all', linestyle = '--',zorder = 1)
+    
+    ### quality flags ###
+    # times with quality flag 0
+    ax1.plot(std_temp_NUCAPS_0.std_temp, std_temp_NUCAPS_0.altitude_m, color = 'green', linewidth = 2, label = 'T NUCAPS 0', zorder = 0)
+    ax1.plot(std_temp_d_NUCAPS_0.std_temp_d, std_temp_NUCAPS_0.altitude_m, color = 'green', linewidth =2, label = 'Td NUCAPS 0', linestyle = '--',zorder = 1)
+    
+    # times with quality flag 1
+    ax1.plot(std_temp_NUCAPS_1.std_temp, std_temp_NUCAPS_1.altitude_m, color = 'lawngreen', linewidth =2, label = 'T NUCAPS 1', zorder = 0)
+    ax1.plot(std_temp_d_NUCAPS_1.std_temp_d, std_temp_NUCAPS_1.altitude_m, color = 'lawngreen', linewidth = 2, label = 'Td NUCAPS 1', linestyle = '--',zorder = 1)
+    
+    # times with quality flag 9
+    #ax1.plot(std_temp_NUCAPS_9.std_temp, std_temp_NUCAPS_9.altitude_m, color = 'lightgreen', linewidth = 2, label = 'T', zorder = 0)
+    #ax1.plot(std_temp_d_NUCAPS_9.std_temp_d, std_temp_NUCAPS_9.altitude_m, color = 'lightgreen', linewidth = 2, label = 'Td', zorder = 1)
+    
+    
+    #####
+    ### NUCAPS ###
+    # all
+    ax2.plot(number_temp_NUCAPS_all.number, number_temp_NUCAPS_all.altitude_m, color = 'darkslategrey', linewidth = 6,  zorder = 0)
+    ax2.plot(number_temp_d_NUCAPS_all.number, number_temp_d_NUCAPS_all.altitude_m, color = 'darkslategrey', linewidth = 6, linestyle = '--', zorder = 1)
+    
+    ### quality flag ###    
+    # times with quality flag 0
+    ax2.plot(number_temp_NUCAPS_0.number, number_temp_NUCAPS_0.altitude_m, color = 'green', linewidth = 2,  zorder = 0)
+    ax2.plot(number_temp_d_NUCAPS_0.number, number_temp_d_NUCAPS_0.altitude_m, color = 'green', linewidth = 2, linestyle = '--', zorder = 1)
+    
+    # times with quality flag 1
+    ax2.plot(number_temp_NUCAPS_1.number, number_temp_NUCAPS_1.altitude_m, color = 'lawngreen', linewidth = 2,  zorder = 0)
+    ax2.plot(number_temp_d_NUCAPS_1.number, number_temp_d_NUCAPS_1.altitude_m, color = 'lawngreen', linewidth = 2, linestyle = '--', zorder = 1)
+    
+    # times with quality flag 9
+    #ax2.plot(number_temp_NUCAPS_9.number, number_temp_NUCAPS_9.altitude_m, color = 'lightgreen', linewidth = 2,  zorder = 0)
+    #ax2.plot(number_temp_d_NUCAPS_9.number, number_temp_d_NUCAPS_9.altitude_m, color = 'lightgreen', linewidth = 2, linestyle = '--', zorder = 1)
+    
     
 
+    ##########################################
+    ##### D) RALMO: Raman lidar 
+    #########################################
+    ax1.plot(std_temp_RA.std_temp, std_temp_RA.altitude_m, color = 'maroon', linewidth = 3, label = 'T RA', zorder = 0)
+    ax1.plot(std_temp_d_RA.std_temp_d, std_temp_RA.altitude_m, color = 'maroon', linewidth = 3, label = 'Td RA', linestyle = '--',zorder = 1)
+
+    #ax1.plot(std_temp_RA_korr_unc_abs.std_temp, std_temp_RA_korr_unc_abs.altitude_m, color = 'orangered', linewidth = 3, label = 'T korr unc abs', zorder = 0)
+    #ax1.plot(std_temp_d_RA_korr_unc_abs.std_temp_d, std_temp_RA_korr_unc_abs.altitude_m, color = 'orangered', linewidth = 3, linestyle = '--',label = 'Td korr unc abs', zorder = 1)
+    
+    #ax1.plot(std_temp_RA_korr_unc_rel.std_temp, std_temp_RA_korr_unc_rel.altitude_m, color = 'magenta', linewidth = 3, label = 'T korr unc rel', zorder = 0)
+    #ax1.plot(std_temp_d_RA_korr_unc_rel.std_temp_d, std_temp_RA_korr_unc_rel.altitude_m, color = 'magenta', linewidth = 3, linestyle = '--',label = 'Td korr unc rel', zorder = 1)
+    
+   
+    
+    #####
+    ax2.plot(number_temp_RA.number, number_temp_RA.altitude_m, color = 'maroon', linewidth = 3, zorder = 0)
+    ax2.plot(number_temp_d_RA.number, number_temp_d_RA.altitude_m, color = 'maroon', linewidth = 3,  linestyle = '--', zorder = 1)
+    
+    #ax2.plot(number_temp_RA_korr_unc_abs.number, number_temp_RA_korr_unc_abs.altitude_m, color = 'orangered', linewidth = 3,  zorder = 0)
+    #ax2.plot(number_temp_d_RA_korr_unc_abs.number, number_temp_d_RA_korr_unc_abs.altitude_m, color = 'orangered', linewidth = 3, linestyle = '--', zorder = 1)
+    
+    #ax2.plot(number_temp_RA_korr_unc_rel.number, number_temp_RA_korr_unc_rel.altitude_m, color = 'magenta', linewidth = 3,  zorder = 0)
+    #ax2.plot(number_temp_d_RA_korr_unc_rel.number, number_temp_d_RA_korr_unc_rel.altitude_m, color = 'magenta', linewidth = 3, linestyle = '--', zorder = 1)
+   
     ##########################################
     ## E) RM: Radiometer 
     ##########################################
-    ax1.plot(std_temp_RM.std_temp, std_temp_RM.altitude_m, color = 'navy', linewidth = 4, label = 'T RM', zorder = 0)
-    ax1.plot(std_temp_d_RM.std_temp_d, std_temp_RM.altitude_m, color = 'navy', linewidth = 4, label = 'Td RM',  linestyle = '--', zorder = 1)
+    ax1.plot(std_temp_RM.std_temp, std_temp_RM.altitude_m, color = 'navy', linewidth = 3, label = 'T RM', zorder = 0)
+    ax1.plot(std_temp_d_RM.std_temp_d, std_temp_RM.altitude_m, color = 'navy', linewidth = 3, label = 'Td RM', linestyle = '--',zorder = 1)
 
     #####
-    ax2.plot(number_temp_RM.number, number_temp_RM.altitude_m, color = 'navy', linewidth = 4,  zorder = 0)
-    ax2.plot(number_temp_d_RM.number, number_temp_RM.altitude_m, color = 'navy', linewidth = 4, linestyle = '--', zorder = 1)
+    ax2.plot(number_temp_RM.number, number_temp_RM.altitude_m, color = 'navy', linewidth = 3,  zorder = 0)
+    ax2.plot(number_temp_d_RM.number, number_temp_RM.altitude_m, color = 'navy', linewidth = 3, linestyle = '--', zorder = 1)
     
-    #fig.savefig(STD_archive+'STD_Radiometer_'+str(dt.datetime.strftime(firstobj,'%Y%m%d%H%M%S'))+'_'+str(dt.datetime.strftime(lastobj,'%Y%m%d%H%M%S'))+'_'+str(DT)+'.png',dpi=300, bbox_inches = "tight")
+    #fig.savefig(STD_archive+'/STD_NUCAPS_1000m_1200_ALL',dpi=300, bbox_inches = "tight")
+    ax1.legend(fontsize = 25)
     
     firstobj= lastobj_month 
-
-
-    ### bias, daily ###
-    ##########################################
-     #diff_temp = np.subtract(NUCAPS_smoothed_INCA_all_minbias_30days.temperature_mean.reset_index(drop=True), RS_smoothed_NUCAPS_all.temperature_mean.reset_index(drop=True), axis = 1)
-    #diff_temp = pd.DataFrame({'diff_temp':diff_temp.values, 'altitude_m': NUCAPS_smoothed_INCA_all_min_bias_run_current_month.altitude_m.values})
-    #diff_temp = diff_temp.astype(float)
-    
-    #diff_temp_d = np.subtract(NUCAPS_smoothed_INCA_all_minbias_30days.temperature_d_mean.reset_index(drop=True), RS_smoothed_NUCAPS_all.temperature_d_mean.reset_index(drop=True), axis = 1)
-    #diff_temp_d = pd.DataFrame({'diff_temp_d':diff_temp_d.values, 'altitude_m': NUCAPS_smoothed_INCA_all_min_bias_run_current_month.altitude_m.values})
-    #diff_temp_d = diff_temp_d.astype(float)
-    
-    #fig, ax = plt.subplots(figsize=(3,8)) 
-    #ax.plot(diff_temp.diff_temp, diff_temp.altitude_m)
-    #ax.set_ylabel('altitude [m]')
-    #ax.set_xlabel('mean T bias')
-    #ax.set_xlim(-10, 10)
-
-    #fig, ax = plt.subplots(figsize=(3,8)) 
-    #ax.plot(diff_temp_d.diff_temp_d, diff_temp_d.altitude_m)
-    #ax.set_ylabel('altitude [m]')
-    #ax.set_xlabel('mean Td bias')
-    #ax.set_xlim(-10, 10)
-    
     
 
-
-
-
-
+ 
+    
 
 
 
