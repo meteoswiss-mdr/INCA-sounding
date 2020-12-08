@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+@author: hau
 
+####
+Collocate NUCAPS to closest radiosonde station 
+####
+"""
 import glob
 import ntpath
 from datetime import datetime, timedelta

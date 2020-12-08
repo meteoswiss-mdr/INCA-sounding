@@ -33,6 +33,7 @@ from metpy.cbook import get_test_data
 from metpy.plots import Hodograph, SkewT
 from metpy.interpolate import interpolate_1d
 import sys
+import metpy
 
 def find_nearest(array, value):
     array = np.asarray(array)
@@ -92,7 +93,7 @@ RS_archive   = '/data/COALITION2/PicturesSatellite/results_NAL/Radiosondes/Payer
 NUCAPS_list_dir = '/data/COALITION2/PicturesSatellite/results_NAL/NUCAPS/txtfiles'
 LIDAR_archive = '/data/COALITION2/PicturesSatellite/results_NAL/RALMO/Payerne/'
 OUTPUT_dir    = '/data/COALITION2/PicturesSatellite/results_NAL/Plots/'
-RM_archive = '/data/COALITION2/PicturesSatellite/results_NAL/Radiometer/radiometer_payerne'
+RM_archive = '/data/COALITION2/PicturesSatellite/results_NAL/Radiometer/'
 INCA_archive = '/data/COALITION2/PicturesSatellite/results_NAL'
 
 COSMO_archive = '/data/COALITION2/database/cosmo/T-TD_3D/'
@@ -167,38 +168,61 @@ T_RS_list = []
 T_d_RS_list = []
 p_RS_list = []
 
-### smooth curve with window of hPa ###
-for i in range(0,len(p_RS)):
-    window_p_min = p_RS.iloc[i] + delta_hPa
-    window_p_max = p_RS.iloc[i] - delta_hPa
-    min_val = p_RS[0]
-    if min_val > window_p_min:
-        index_list = np.where(np.logical_and(p_RS>=window_p_min, p_RS<=window_p_max))
-        T_index = T_RS[(p_RS > window_p_max) & (p_RS < window_p_min)]
-        T_d_index = T_d_RS[(p_RS > window_p_max) & (p_RS < window_p_min)]
-        p_index = p_RS[(p_RS > window_p_max) & (p_RS < window_p_min)]
-   
-        mean_T_RS = np.mean(T_index)
-        T_RS_list.append(mean_T_RS)
-        
-        mean_T_d_RS = np.mean(T_d_index)
-        T_d_RS_list.append(mean_T_d_RS)
-    else:
-        T_index = T_RS[(p_RS > window_p_max) & (p_RS < p_RS.iloc[i])]
-        T_d_index = T_d_RS[(p_RS > window_p_max) & (p_RS < p_RS.iloc[i])]
-        p_index = p_RS[(p_RS > window_p_max) & (p_RS < p_RS.iloc[i])]
-   
-        mean_T_RS = np.mean(T_index)
-        T_RS_list.append(mean_T_RS)
-        
-        mean_T_d_RS = np.mean(T_d_index)
-        T_d_RS_list.append(mean_T_d_RS)
+ 
+
+lon_Payerne = 6.93608
+lat_Payerne = 46.82201
+
+INCA_grid = xr.open_dataset('/data/COALITION2/PicturesSatellite/results_NAL/COSMO//inca_topo_levels_hsurf_ccs4.nc') 
+lon_1 = INCA_grid.lon_1.values.flatten()
+lat_1 = INCA_grid.lat_1.values.flatten()
+INCA_grid_1 = pd.DataFrame({'lat' : lat_1, 'lon':lon_1})
+tree = spatial.KDTree(INCA_grid_1.values)
+coordinates = tree.query([([lat_Payerne, lon_Payerne])])
+coordinates = coordinates[1]
+Coordinates_1 = INCA_grid_1.loc[coordinates[0]]
+INCA_grid_all = INCA_grid.where((INCA_grid.lon_1 == Coordinates_1.lon) & (INCA_grid.lat_1 == Coordinates_1.lat), drop=True)
+INCA_grid = pd.DataFrame({'altitude_m' : INCA_grid_all.HFL.values.flatten()})
+INCA_grid_boundaries = pd.DataFrame({'altitude_m' : INCA_grid_all.HHL.values.flatten()})
     
+T_RS = T_RS.iloc[::-1]
+T_d_RS = T_d_RS[::-1]
+for i in range(0,len(INCA_grid)):
+    print(i)
+    if (i == 0):
+        window_h_max = INCA_grid.iloc[i] + (INCA_grid.iloc[i] - INCA_grid.iloc[i+1]) / 2
+        window_h_min = INCA_grid.iloc[i] - (INCA_grid.iloc[i] - INCA_grid.iloc[i+1]) / 2
+    elif (i==49):
+        window_h_min = INCA_grid.iloc[i] - (INCA_grid.iloc[(i-1)] - INCA_grid.iloc[i])  / 2
+        window_h_max = INCA_grid.iloc[i] + (INCA_grid.iloc[(i-1)] - INCA_grid.iloc[i])  / 2
+    else: 
+        window_h_min = INCA_grid.iloc[i] - (INCA_grid.iloc[(i-1)] - INCA_grid.iloc[i])  / 2
+        window_h_max = INCA_grid.iloc[i] + (INCA_grid.iloc[i] - INCA_grid.iloc[i+1]) / 2
+    print('min' + str(window_h_min.values))
+    print('max' + str(window_h_max.values))
     
+    index_list = np.where(np.logical_and(z_RS>=float(window_h_min.values), z_RS<=float(window_h_max.values)))
+    T_index = T_RS[(z_RS < float(window_h_max.values)) & (z_RS > float(window_h_min.values))]
+    T_d_index = T_d_RS[(z_RS < float(window_h_max.values)) & (z_RS > float(window_h_min.values))]
+    #p_index = z_RS[(z_RS > window_h_max) & (z_RS < window_h_min)]
+   
+    mean_T_RS = np.mean(T_index)
+    T_RS_list.append(mean_T_RS)
+        
+    mean_T_d_RS = np.mean(T_d_index)
+    T_d_RS_list.append(mean_T_d_RS)
+ 
+
 T_RS_smoothed = pd.DataFrame(T_RS_list)
 
 T_d_RS_smoothed = pd.DataFrame(T_d_RS_list) 
 
+T_d_RS_smoothed = pd.DataFrame(T_d_RS_list) 
+
+
+
+
+INCA_grid = metpy.calc.height_to_pressure_std(INCA_grid.values * units.meters)
 ##########################################
 ##### C) NUCAPS: Satellite data 
 ##########################################
@@ -386,17 +410,17 @@ RM_data.pressure_hPa = metpy.calc.height_to_pressure_std(RM_data.altitude_m.valu
 ########################################## 
 ## F) COSMO: Model data 
 ##########################################
-COSMO_coordinate = pd.read_csv('/data/COALITION2/PicturesSatellite/results_NAL/COSMO//COSMO_coordindate_payerne.csv')
+#COSMO_coordinate = pd.read_csv('/data/COALITION2/PicturesSatellite/results_NAL/COSMO//COSMO_coordindate_payerne.csv')
 #COSMO_data = xr.open_dataset(COSMO_archive+'cosmo1_inca_2020072006_01.nc').to_dataframe()
 #COSMO_data =    COSMO_data[COSMO_data.lat_1 == float(COSMO_coordinate.lat_1.values)] 
 #COSMO_data =    COSMO_data[COSMO_data.lon_1 == float(COSMO_coordinate.lon_1.values)] 
-COSMO_data = xr.open_dataset('/data/COALITION2/PicturesSatellite/results_NAL/COSMO/cosmo1_inca_merge_cut.nc').to_dataframe()
-COSMO_data = COSMO_data.reset_index().rename(columns = {'time' : 'time_YMDHMS', 'p_inca': 'pressure_hPa', 't_inca' : 'temperature_degC'})
-COSMO_data = COSMO_data[COSMO_data.time_YMDHMS == COSMO_time]
+#COSMO_data = xr.open_dataset('/data/COALITION2/PicturesSatellite/results_NAL/COSMO/cosmo1_inca_merge_cut.nc').to_dataframe()
+#COSMO_data = COSMO_data.reset_index().rename(columns = {'time' : 'time_YMDHMS', 'p_inca': 'pressure_hPa', 't_inca' : 'temperature_degC'})
+#COSMO_data = COSMO_data[COSMO_data.time_YMDHMS == COSMO_time]
 # remove duplicate pressures
-COSMO_data = COSMO_data.loc[~COSMO_data.pressure_hPa.duplicated(keep='first')]
-COSMO_data.pressure_hPa  = COSMO_data.pressure_hPa / 100
-COSMO_data.temperature_degC  = COSMO_data.temperature_degC - 273.15
+#COSMO_data = COSMO_data.loc[~COSMO_data.pressure_hPa.duplicated(keep='first')]
+#COSMO_data.pressure_hPa  = COSMO_data.pressure_hPa / 100
+#COSMO_data.temperature_degC  = COSMO_data.temperature_degC - 273.15
 
 # add altitude 
 ## read INCA grid
@@ -406,11 +430,11 @@ COSMO_data.temperature_degC  = COSMO_data.temperature_degC - 273.15
 
 
 # add dew point temperature 
-pressure_COSMO = COSMO_data.pressure_hPa.values * units.hPa
-temp_COSMO = (COSMO_data.temperature_degC.values -273.15) * units.degC
-specific_humidity_COSMO = COSMO_data.qv_inca.values * units('g/kg')
-temp_d_COSMO = cc.dewpoint_from_specific_humidity(specific_humidity_COSMO, temp_COSMO, pressure_COSMO)
-COSMO_data.insert(value=temp_d_COSMO, column = "dew_point_degC", loc = 36)
+#pressure_COSMO = COSMO_data.pressure_hPa.values * units.hPa
+#temp_COSMO = (COSMO_data.temperature_degC.values -273.15) * units.degC
+#specific_humidity_COSMO = COSMO_data.qv_inca.values * units('g/kg')
+#temp_d_COSMO = cc.dewpoint_from_specific_humidity(specific_humidity_COSMO, temp_COSMO, pressure_COSMO)
+#COSMO_data.insert(value=temp_d_COSMO, column = "dew_point_degC", loc = 36)
 
 
 #plt.plot(RM_data.temperature_degC, RM_data.altitude_m, color = 'black', linewidth = 2, zorder=0 ,label = 'Lidar T')
@@ -445,36 +469,6 @@ COSMO_data.insert(value=temp_d_COSMO, column = "dew_point_degC", loc = 36)
 #ax.set_xlabel('RH [%]', fontsize = 16)
 #ax.tick_params(labelsize = 16)
 
-# Pressure coordinates
-fig, ax = plt.subplots(figsize = (5,12))
-ax.plot(RM_data.temperature_degC, RM_data.pressure_hPa, color = 'red', zorder = 5)
-ax.plot(T_RS_original, p_RS_original, color = 'black')
-#ax.set_title(Time_RA, fontsize = 16)
-ax.set_ylim(1050,200)
-#ax.set_xlim(0,20,2)
-ax.set_ylabel('Pressure [hPa]', fontsize = 16)
-ax.set_xlabel('temperature [°C]', fontsize = 16)
-ax.set_yscale('log')
-ax.yaxis.set_major_formatter(ScalarFormatter())
-ax.yaxis.set_major_locator(MultipleLocator(100))
-ax.yaxis.set_minor_formatter(NullFormatter())
-ax.tick_params(labelsize = 16)
-ax.grid()
-
-# Altitude coordinates
-fig, ax = plt.subplots(figsize = (5,12))
-ax.plot(RM_data.temperature_degC, RM_data.altitude_m, color = 'red', zorder = 5)
-ax.plot(T_RS_original, z_RS, color = 'black')
-#ax.set_title(Time_RA, fontsize = 16)
-ax.set_ylim(0,12000)
-#ax.set_xlim(0,20,2)
-#ax.set_xticks(np.arange(0,20,2))
-ax.set_ylabel('Alltitude [m]', fontsize = 16)
-ax.set_xlabel('temperature [°C]', fontsize = 16)
-ax.tick_params(labelsize = 16)
-ax.grid()
-
-
 fig = plt.figure(figsize=(9, 9))
 skew = SkewT(fig)
 
@@ -492,8 +486,8 @@ skew.plot(p_RS_original, T_RS_original, color = 'red', linewidth = 2, label = 'R
 skew.plot(p_RS_original, T_d_RS_original, color = 'red', linewidth=2, linestyle = 'dashed', label = 'RS Td')
 
 # smoothed RS data
-#skew.plot(p_RS_original, T_RS_smoothed, color = 'pink', linewidth = 2, label = 'RS T smoothed')
-#skew.plot(p_RS_original, T_d_RS_smoothed, color = 'pink', linewidth=2, linestyle='dashed', label = 'RS Td smoothed')
+skew.plot(INCA_grid, T_RS_smoothed, color = 'pink', linewidth = 2, label = 'RS T smoothed')
+skew.plot(INCA_grid, T_d_RS_smoothed, color = 'pink', linewidth=2, linestyle='dashed', label = 'RS Td smoothed')
 
 ##########################################
 ##### C) NUCAPS: Satellite data 
@@ -503,12 +497,12 @@ skew.plot(p_NUCAPS, T_NUCAPS,color = 'navy', linewidth=2, label = 'NUCAPS T')
 skew.plot(p_NUCAPS, T_d_NUCAPS, color = 'navy', linewidth=2, linestyle='dashed', label = 'NUCAPS Td')
 
 ## MIT (only microwave retrieval) temperature
-#skew.plot(p_NUCAPS, MIT_T_NUCAPS, color = 'steelblue', linewidth=1.5, label = 'NUCAPS MIT T')
-#skew.plot(p_NUCAPS, T_d_MIT_NUCAPS, color = 'steelblue', linewidth=1.5, linestyle='dashed', label = 'NUCAPS MIT Td')
+skew.plot(p_NUCAPS, MIT_T_NUCAPS, color = 'steelblue', linewidth=1.5, label = 'NUCAPS MIT T')
+skew.plot(p_NUCAPS, T_d_MIT_NUCAPS, color = 'steelblue', linewidth=1.5, linestyle='dashed', label = 'NUCAPS MIT Td')
 
 # FG (first guess) temperature
-#skew.plot(p_NUCAPS, T_FG_NUCAPS, color = 'lightskyblue', linewidth=1, label = 'NUCAPS FG T')
-#skew.plot(p_NUCAPS, T_d_FG_NUCAPS, color = 'lightskyblue', linewidth=1, linestyle='dashed', label = 'NUCAPS FG Td')
+skew.plot(p_NUCAPS, T_FG_NUCAPS, color = 'lightskyblue', linewidth=1, label = 'NUCAPS FG T')
+skew.plot(p_NUCAPS, T_d_FG_NUCAPS, color = 'lightskyblue', linewidth=1, linestyle='dashed', label = 'NUCAPS FG Td')
 
 ##########################################
 ##### D) RALMO: Raman lidar 

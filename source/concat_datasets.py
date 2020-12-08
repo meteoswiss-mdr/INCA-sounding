@@ -1,26 +1,46 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Jun 16 15:59:11 2020
-
-@author: nal
-
-convert textfiles over a time span into one nc file
-
-for radiosondes (RS), raman lidar (ralmo) and SwissMetNet (SMN)
-
-"""
 import pandas as pd
 import numpy as np
 import datetime as dt
 import netCDF4 as nc4
 import xarray as xr
+import metpy.calc
+from metpy.units import units
 
+def read_HATPRO(firstobj):
+    url = 'http://wlsprod.meteoswiss.ch:9010/jretrievedwh/profile/data/wmo_ind?locationIds=06610&delimiter=comma&measCatNr=1&dataSourceId=38&parameterIds=3147,3148&date='+str(dt.datetime.strftime(firstobj, '%Y%m%d%H%M%S'))+'&obsTypeIds=31'
+    RM = pd.read_csv(url, skiprows = [1], sep=',')
+    if RM.empty:
+        firstobj= firstobj + dt.timedelta(minutes=step_RM)
+    else: 
+        RM = RM.rename(columns = {'termin' : 'time_YMDHMS' , '3147' : 'temperature_K', '3148' : 'absolute_humidity_gm3', 'level' : 'altitude_m'})
+        # < temperature >
+        RM['temperature_degC'] = RM.temperature_K - 273.15
+        
+        
+        p_w = ((RM.temperature_K * RM.absolute_humidity_gm3) / 2.16679)
+        RM['dew_point_degC'] = metpy.calc.dewpoint((p_w.values * units.Pa))
+        
+        url = 'http://wlsprod.meteoswiss.ch:9010/jretrievedwh/profile/integral/wmo_ind?locationIds=06610&measCatNr=1&dataSourceId=38&parameterIds=3150,5560,5561&date='+str(dt.datetime.strftime(firstobj, '%Y%m%d%H%M%S'))+'&delimiter=comma&obsTypeIds=31'
+        RM_quality_flag = pd.read_csv(url, skiprows = [1], sep=',')
+        if RM_quality_flag.empty:
+            RM['quality_flag'] = np.nan * len(RM)
+            RM['radiometer_quality_flag_temperature_profile'] = np.nan * len(RM)
+            RM['radiometer_quality_flag_humidity_profile'] = np.nan * len(RM)
+        else: 
+            RM_quality_flag = RM_quality_flag.rename(columns = {'3150' : 'radiometer_rainflag', '5560': 'radiometer_quality_flag_temperature_profile', '5561' : 'radiometer_quality_flag_humidity_profile'})
+            RM['quality_flag'] = pd.concat([RM_quality_flag] * len(RM)).radiometer_rainflag.values
+            RM['radiometer_quality_flag_temperature_profile'] = pd.concat([RM_quality_flag] * len(RM)).radiometer_quality_flag_temperature_profile.values
+            RM['radiometer_quality_flag_humidity_profile'] = pd.concat([RM_quality_flag] * len(RM)).radiometer_quality_flag_humidity_profile.values
+            
+        RM['time_YMDHMS'] = pd.to_datetime(RM.time_YMDHMS, format = '%Y%m%d%H%M%S')                                         
+        return RM
+    
 ######################################## define paths ############################################ 
 
-RS_archive   = '/data/COALITION2/PicturesSatellite/results_NAL/Radiosondes/Payerne/' # path of radiosonde data
-RALMO_archive = '/data/COALITION2/PicturesSatellite/results_NAL/RALMO/Payerne/' # path of raman lidar data
-SMN_archive = '/data/COALITION2/PicturesSatellite/results_NAL/SwissMetNet/Payerne' # path of SwissMetNet data
+RS_archive   = '/data/COALITION2/internships/nal/data/Radiosondes/Payerne/' # path of radiosonde data
+RALMO_archive = '/data/COALITION2/internships/nal/data/RALMO/Payerne/' # path of raman lidar data
+SMN_archive = '/data/COALITION2/internships/nal/data/SwissMetNet/Payerne' # path of SwissMetNet data
+RM_archive = '/data/COALITION2/internships/nal/data/Radiometer/Payerne/' # path of SwissMetNet data
 
 ######################################## define variables ######################################## 
 # radiosonde 
@@ -48,7 +68,30 @@ lastdate_SMN = '2020050100'
 step_SMN = 30 # define time step in minutes
 nc_name_SMN = 'SMN_concat1.nc'
 
+# Radiometer
+location_name_RM = 'Payerne' # location name
+location_id_RM = '06610' # location ID
+firstdate_RM = '2019050100' # define time span
+lastdate_RM = '2020050100'
+step_RM = 30 # define time step in minutes
+nc_name_RM = 'RM_concat_new1.nc'
+
 ######################################## read txt files and concat to one dataframe ######################################## 
+##### Radiometer #####  
+firstobj=dt.datetime.strptime(firstdate_RM,'%Y%m%d%H')
+lastobj=dt.datetime.strptime(lastdate_RM,'%Y%m%d%H')
+
+pd_concat_RM = pd.DataFrame() # define empty dataframe
+while firstobj != lastobj: # loop over days
+    print(firstobj.strftime('%Y%m%d%H%M%S'))
+    RM_data = read_HATPRO(firstobj)
+    pd_concat_RM = pd_concat_RM.append(RM_data)
+    firstobj= firstobj + dt.timedelta(minutes=step_RM)
+ 
+# name variables
+pd_concat_RM = xr.Dataset(pd_concat_RM)
+pd_concat_RM.to_netcdf(RM_archive+'/'+nc_name_RM) # save dataframe to nc file 
+
 ##### Radiosondes #####  
 firstobj=dt.datetime.strptime(firstdate_RS,'%Y%m%d%H')
 lastobj=dt.datetime.strptime(lastdate_RS,'%Y%m%d%H')
