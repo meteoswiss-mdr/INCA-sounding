@@ -17,8 +17,13 @@ from copy import deepcopy
 # see position of radiosondes in Europe http://radiosonde.eu/RS00-D/RS02C-D.html
 position_names={}
 position_names[tuple([46.82201, 6.93608])]='Payerne'
-position_names[tuple([45.4605,  9.2602 ])]='Milan'
-position_names[tuple([48.244,  11.552  ])]='Munich'
+position_names[tuple([45.4614,   9.2831])]='Milan'      # milan-lineate
+position_names[tuple([48.2442,  11.5525])]='Munich'     # munich-oberschleissheim
+position_names[tuple([48.8333,   9.2000])]='Stuttgart'  #
+position_names[tuple([47.2603,  11.3439])]='Innsbruck'  # flughafen
+position_names[tuple([45.7264,   5.0778])]='Lyon'       # Exupery
+position_names[tuple([43.8569,   4.4064])]='Nimes'
+position_names[tuple([45.9806,  13.0592])]='Udine'      # Udine/RIVOLTO RDS
 
 ##################################################################
 a=1
@@ -130,7 +135,7 @@ def open_NUCAPS_file(NUCAPS_file, remove_data_below_surface=True, verbose=False)
     units, reference_date = ds.Time.attrs['units'].split(' since ')
     if units=='msec':
         ref_date = datetime.strptime(reference_date,"%Y-%m-%dT%H:%M:%SZ") # usually '1970-01-01T00:00:00Z'
-        NUCAPS_datetimes = [ -1 if np.isnan(t) else ref_date + timedelta(milliseconds=t) for t in ds.Time.data]
+        NUCAPS_datetimes = [ np.nan if np.isnan(t) else ref_date + timedelta(milliseconds=t) for t in ds.Time.data]
         NUCAPS_datetimes_xr = xr.DataArray(NUCAPS_datetimes, coords=ds.Time.coords, dims=ds.Time.dims)
         NUCAPS_datetimes_xr.name = "datetime"
         # datetime is saved as np.datetime64, when searching for a certain time convert to this data type before
@@ -160,15 +165,15 @@ def open_NUCAPS_file(NUCAPS_file, remove_data_below_surface=True, verbose=False)
 
 ##################################################################
 
-def calc_distance_NUCAPS_to_location(time_ref, dt1, dt2, latlon_ref, cache=True, cachedir="/tmp/", verbose=False):
+def calc_distance_NUCAPS_to_location(time_ref, dt1, dt2, latlon_ref, cache=True, cacheoverwrite=False, cachedir="/tmp/", verbose=False):
     
     print("... calcualte distances to reference point: ", latlon_ref)
 
-    if cache:
+    if cache or cacheoverwrite:
         #cache_file = time_ref.strftime(cachedir+"%Y%m%d%H%M_NUCAPS_"+get_position_name(latlon_ref)+"_"+'{:d}'.format(dt1)+"min_"+'{:d}'.format(dt2)+"min.txt")
         cache_file = time_ref.strftime(cachedir+"%Y%m%d%H%M_NUCAPS_"+get_position_name(latlon_ref)+"_"+'{:d}'.format(dt1)+"min_"+'{:d}'.format(dt2)+"min.pkl")
 
-    if cache and path.exists(cache_file):
+    if (cache and path.exists(cache_file)) and not cacheoverwrite:
         if verbose:
             print("    read pre-calculated distances from", cache_file)
         if cache_file[-3:]=="pkl":
@@ -217,7 +222,7 @@ def calc_distance_NUCAPS_to_location(time_ref, dt1, dt2, latlon_ref, cache=True,
             ds.close()
 
             #print(files_and_distances)
-        if cache:
+        if cache or cacheoverwrite:
             if verbose:
                 print("write calculated distances to ", cache_file)
             if cache_file[-3:]=="pkl":
@@ -277,7 +282,17 @@ def get_closest_NUCAPS_profile(time_ref, dt1, dt2, dx, latlon_ref, var_names=['T
             i_file = np.where(files_and_distances.min_dist == np.min(files_and_distances.min_dist))[0][0]
 
             NUCAPS_file = files_and_distances.file.iloc[i_file]
+            if not path.isfile(NUCAPS_file):
+                print("... Warning, NUCAPS file "+NUCAPS_file+" does not exist, recalculate distance ")
+                files_and_distances = calc_distance_NUCAPS_to_location(time_ref, dt1, dt2, latlon_ref, cacheoverwrite=True, cachedir="/tmp/")
+                if files_and_distances.shape[0] > 0:
+                    min_dist = np.min(files_and_distances.min_dist)
+                    if min_dist < dx:
+                        i_file = np.where(files_and_distances.min_dist == np.min(files_and_distances.min_dist))[0][0]
+                        NUCAPS_file = files_and_distances.file.iloc[i_file]
+                    
             print("... read data from: ", NUCAPS_file, ", distance: ", files_and_distances.min_dist.iloc[i_file], " km")
+            
             ds = open_NUCAPS_file(NUCAPS_file)
             
             # index with minimum distance within the file 
@@ -309,7 +324,7 @@ if __name__ == '__main__':
     if len(sys.argv) == 1:
         #use default date
         datetime_RS = datetime(2019,5,1,0,0)
-        #datetime_RS = datetime(2020,5,2,0,0)
+        #datetime_RS = datetime(2020,12,21,0,0)
     elif len(sys.argv) == 6:
         year    = int(sys.argv[1])
         month   = int(sys.argv[2])
@@ -325,20 +340,32 @@ if __name__ == '__main__':
 ####################################################
     # this part could be changed by users
 
-    #latlon_radiosonde = [46.82201, 6.93608]  # payerne
-    latlon_radiosonde = [48.244,  11.552  ]  # munich
-    #latlon_radiosonde = [45.4605 ,  9.2602]  # milan
+    # list of location for radiosondes is here:
+    # https://www.ncdc.noaa.gov/data-access/weather-balloon/integrated-global-radiosonde-archive
+    #
+    #latlon_radiosonde = [46.82201, 6.93608]   # payerne  
+    #latlon_radiosonde = [48.2442,  11.5525  ] # munich-oberschleissheim
+    #latlon_radiosonde = [45.4614,   9.2831]   # milan-lineate
+    #latlon_radiosonde = [48.8333,   9.2000]   # stuttgart
+    #latlon_radiosonde = [47.2603,   11.3439]  # innsbruck flughafen
+    #latlon_radiosonde = [45.7264,    5.0778]  # Lyon Exupery
+    #latlon_radiosonde = [43.8569,    4.4064]  # Nimes-COURBESSAC
+    latlon_radiosonde = [45.9806,   13.0592]  # Udine/RIVOLTO RDS
+    
 
     #dt1 = -60 # delta time in min before (negative) time_ref to search for NUCAPS files 
     #dt2 =   0 # delta time in min after  (positive) time_ref to search for NUCAPS files
-    dt1 = -120 # delta time in min before (negative) time_ref to search for NUCAPS files 
+    #dt1 = -120 # delta time in min before (negative) time_ref to search for NUCAPS files 
+    #dt2 =   60 # delta time in min after  (positive) time_ref to search for NUCAPS files
+    dt1 = -720 # delta time in min before (negative) time_ref to search for NUCAPS files 
     dt2 =   60 # delta time in min after  (positive) time_ref to search for NUCAPS files
     dx = 3500
 
-    verbose=False
+    verbose=True
     
-    time_end = datetime_RS + timedelta(days=366)
     #time_end = datetime_RS + timedelta(days=1)
+    #time_end = datetime_RS + timedelta(days=366)
+    time_end = datetime(2020,8,26,12,0)
     #var_names = ["Pressure","Effective_Pressure","MIT_Temperature","Temperature","FG_Temperature","H2O","MIT_H2O","FG_H2O","H2O_MR","MIT_H2O_MR","FG_H2O_MR"]
     var_names = ["MIT_Temperature","Temperature","FG_Temperature","H2O","MIT_H2O","FG_H2O","H2O_MR","MIT_H2O_MR","FG_H2O_MR"] + vars2D + ["distance"]
     #var_names = ["MIT_Temperature","Surface_Pressure", "MW_Surface_Class", "distance"]
@@ -353,7 +380,7 @@ if __name__ == '__main__':
     print("=============================")
     
     tt = deepcopy(datetime_RS)
-    while tt < time_end:
+    while tt <= time_end:
         
         # get profiles from the closest observation 
         profile = get_closest_NUCAPS_profile(tt, dt1, dt2, dx, latlon_radiosonde, var_names=var_names, verbose=verbose)
