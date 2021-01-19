@@ -1,10 +1,4 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Fri May 29 08:48:58 2020
-
-@author: nal
-
+﻿"""
 Plot data from surface measurement, radiosonde, satellite and lidar measurements
 """
 import pandas as pd

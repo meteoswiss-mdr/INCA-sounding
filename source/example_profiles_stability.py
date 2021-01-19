@@ -1,13 +1,4 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Mon May 18 13:18:38 2020
-
-@author: nal
-"""
-
-
-"""
+﻿"""
 Plot Radiosounding, 11.05.2020
 based on:
     Import radiosounding data:
